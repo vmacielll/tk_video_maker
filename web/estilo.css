@@ -1,0 +1,463 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --fundo: #f7f6f9;
+  --cartao: #ffffff;
+  --borda: #e5e2ec;
+  --texto: #221f2b;
+  --texto-suave: #6b657a;
+  --acento: #6d4bc7;
+  --acento-hover: #5b3bb0;
+  --erro: #c0392b;
+  --erro-fundo: #fdecea;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitulo {
+  color: var(--texto-suave);
+  margin-top: 6px;
+}
+
+.cartao {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 20px;
+}
+
+.cartao h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+/* Dropzone */
+.dropzone {
+  border: 2px dashed var(--borda);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover,
+.dropzone.drag {
+  border-color: var(--acento);
+  background: #faf8ff;
+}
+
+.dropzone-texto {
+  color: var(--texto-suave);
+}
+
+.preview {
+  display: block;
+  max-width: 220px;
+  margin: 16px auto 0;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+}
+
+/* Textarea */
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+  min-height: 140px;
+}
+
+textarea:focus,
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--acento);
+}
+
+.dica {
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  margin-top: 8px;
+}
+
+/* Grade de opções */
+.grade {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+}
+
+.campo label {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  margin-bottom: 6px;
+}
+
+.campo input[type="number"],
+.campo input[type="text"],
+.campo select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: #fff;
+}
+
+.campo input[type="color"] {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 4px;
+  background: #fff;
+}
+
+.campo input[type="range"] {
+  width: 100%;
+}
+
+.campo-cheio {
+  grid-column: 1 / -1;
+}
+
+/* Botões */
+.botao-primario {
+  width: 100%;
+  padding: 14px;
+  background: var(--acento);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.botao-primario:hover {
+  background: var(--acento-hover);
+}
+
+.botao-primario:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.botao-download {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 18px;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  color: var(--texto);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.botao-download:hover {
+  border-color: var(--acento);
+}
+
+/* Alerta */
+.alerta {
+  margin: 16px 0;
+  padding: 12px 16px;
+  background: var(--erro-fundo);
+  color: var(--erro);
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+/* Resultado */
+#resultado video {
+  width: 100%;
+  max-height: 480px;
+  border-radius: 12px;
+  background: #000;
+}
+
+/* Lista de vídeos */
+.lista-videos {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.item-video {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-video video {
+  width: 100%;
+  max-height: 300px;
+  border-radius: 10px;
+  background: #000;
+}
+
+.vazio {
+  color: var(--texto-suave);
+  text-align: center;
+  padding: 16px 0;
+}
+
+@media (max-width: 520px) {
+  .grade {
+    grid-template-columns: 1fr;
+  }
+}
+
+.preview-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.cartao-auto {
+  border-color: var(--acento);
+  background: #faf8ff;
+}
+
+.cartao-auto .campo {
+  margin-bottom: 12px;
+}
+
+/* Animação Ken Burns sutil: zoom lento + pan mínimo, loop infinito.
+   O transform é aplicado no <img> (não na div wrapper). O wrapper tem
+   overflow:hidden e tamanho fixo, então a caixa de layout NÃO muda —
+   o que se move é só a imagem dentro da "moldura". */
+@keyframes kenburns {
+  from { transform: scale(1) translate(0, 0); }
+  to   { transform: scale(1.08) translate(-4px, -3px); }
+}
+
+#preview,
+#preview-frame-bg {
+  animation: kenburns 10s ease-in-out infinite alternate;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/* O overlay (texto+moldura) fica estático por cima — só o bg anima. */
+#preview-frame-overlay {
+  /* sem animation */
+}
+
+/* Moldura fixa que recorta o overflow visual do scale da imagem.
+   A div mantém o mesmo tamanho; só o que está dentro dela se move. */
+.preview-clip,
+.preview-wrap {
+  overflow: hidden;
+}
+
+.preview-clip {
+  max-width: 220px;
+  margin: 16px auto 0;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  background: #000;
+}
+
+.preview-clip .preview {
+  margin: 0;
+  max-width: 100%;
+  border: none;
+  border-radius: 0;
+  display: block;
+}
+
+/* Preview do vídeo: empilha bg (animado) + overlay (estático) dentro
+   do mesmo wrapper .preview-wrap com tamanho fixo. */
+.preview-wrap {
+  position: relative;
+  max-width: 220px;
+  margin: 0 auto;
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  border: 1px solid var(--borda);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  background: #000;
+}
+
+.preview-frame-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#resultado-legenda textarea {
+  width: 100%;
+  min-height: 100px;
+}
+
+.fundo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fundo-item {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--borda);
+}
+
+.fundo-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.fundo-remover {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.botoes-linha {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+/* Seletor de layout do texto (chips) */
+.campo-rotulo {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  margin-bottom: 6px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 9px 14px;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--texto);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--acento);
+  color: var(--acento);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+.chip-ativo,
+.chip-ativo:hover {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+
+/* "Automático" fica tracejado quando não está selecionado (layout não fixado) */
+.chip-auto:not(.chip-ativo) {
+  border-style: dashed;
+}
+
+.chip-auto:not(.chip-ativo):hover {
+  border-style: solid;
+}
+
+/* Linha de busca de imagem (input + botão na mesma linha) */
+.linha-busca {
+  display: flex;
+  gap: 8px;
+}
+
+.linha-busca input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.linha-busca .botao-download {
+  margin-top: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.botao-download:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .linha-busca {
+    flex-direction: column;
+  }
+
+  .linha-busca .botao-download {
+    width: 100%;
+  }
+}
