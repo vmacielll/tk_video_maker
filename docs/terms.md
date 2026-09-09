@@ -54,4 +54,4 @@ We may update these terms. The date at the top will always reflect the latest re
 
 ## Contact
 
-Open an issue at https://github.com/vmacielll/tk_video_maker/issues or contact the maintainer via the GitHub profile.
+See the project repository at https://github.com/vmacielll/tk_video_maker for maintainer contact information.
