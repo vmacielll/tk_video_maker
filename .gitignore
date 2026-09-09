@@ -25,6 +25,7 @@ env/
 # saída de runtime
 saida/
 saida_web/
+saida_auto/
 
 # logs
 *.log
