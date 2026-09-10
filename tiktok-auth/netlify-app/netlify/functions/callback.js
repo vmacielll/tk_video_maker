@@ -57,13 +57,13 @@ function pageShell(title, inner) {
 
 function requestToken(payload) {
   return new Promise(function (resolve, reject) {
-    const body = JSON.stringify(payload);
+    const body = new URLSearchParams(payload).toString();
     const req = https.request(
       TOKEN_URL,
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
           "Content-Length": Buffer.byteLength(body),
         },
       },
