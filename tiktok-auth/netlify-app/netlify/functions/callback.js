@@ -3,7 +3,6 @@
 const https = require("https");
 
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
-const SAVE_DIR = "/Users/vmaciel/tk_video_maker/tiktok-auth/python";
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -12,18 +11,6 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function pyStr(value) {
-  return (
-    '"' +
-    String(value == null ? "" : value)
-      .replace(/\\/g, "\\\\")
-      .replace(/"/g, '\\"')
-      .replace(/\r/g, "\\r")
-      .replace(/\n/g, "\\n") +
-    '"'
-  );
 }
 
 function pageShell(title, inner) {
@@ -35,19 +22,23 @@ function pageShell(title, inner) {
     escapeHtml(title) +
     "</title>\n" +
     "<style>\n" +
-    "  body { margin: 0; padding: 2rem 1rem; font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #111; background: #f7f7f8; }\n" +
+    '  body { margin: 0; padding: 2rem 1rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #111; background: #f7f7f8; }\n' +
     "  main { max-width: 46rem; margin: 0 auto; background: #fff; border: 1px solid #e2e2e4; border-radius: 8px; padding: 2rem; }\n" +
     "  h1 { font-size: 1.4rem; margin: 0 0 1.25rem; }\n" +
     "  h2 { font-size: 1.05rem; margin: 1.75rem 0 0.5rem; }\n" +
     "  p { font-size: 0.95rem; }\n" +
+    "  ul { padding-left: 1.25rem; }\n" +
+    "  li { font-size: 0.95rem; margin: 0.25rem 0; }\n" +
     "  .ok { color: #0a7d32; font-weight: 600; }\n" +
     "  .bad { color: #b00020; font-weight: 600; }\n" +
     "  .error-box { margin: 1rem 0; padding: 1rem; border: 1px solid #b00020; border-radius: 6px; background: #fff5f6; color: #b00020; display: none; }\n" +
+    "  .warning-box { margin: 1.5rem 0; padding: 1rem 1.25rem; border: 2px solid #b00020; border-radius: 6px; background: #fff5f6; color: #5a0010; }\n" +
+    "  .warning-box strong { color: #b00020; display: block; margin-bottom: 0.5rem; font-size: 1rem; }\n" +
+    "  .warning-box ul { margin: 0.5rem 0 0 0; }\n" +
     "  pre { position: relative; margin: 0; padding: 1rem; background: #f2f2f4; border: 1px solid #e2e2e4; border-radius: 6px; overflow-x: auto; }\n" +
     "  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; white-space: pre; }\n" +
-    "  .block { margin-bottom: 0.75rem; }\n" +
-    "  .copy { margin: 0 0 0.5rem; padding: 0.4rem 0.8rem; font: inherit; font-size: 0.8rem; font-weight: 600; color: #fff; background: #111; border: none; border-radius: 6px; cursor: pointer; }\n" +
-    "  .copy:hover { background: #333; }\n" +
+    "  .download-button { display: inline-block; padding: 0.7rem 1.25rem; background: #111; color: #fff; text-decoration: none; font-weight: 600; border-radius: 6px; font-size: 0.95rem; margin: 0.5rem 0; }\n" +
+    "  .download-button:hover { background: #333; }\n" +
     "  a { color: #0b5fff; }\n" +
     "</style>\n</head>\n<body>\n<main>\n" +
     inner +
@@ -96,35 +87,6 @@ function requestToken(payload) {
     req.write(body);
     req.end();
   });
-}
-
-function buildSnippet(tokens) {
-  return [
-    "cd " + SAVE_DIR + " && python3 <<'PYEOF'",
-    "import json, pathlib",
-    'p = pathlib.Path("tiktok_tokens.json").resolve()',
-    'data = json.loads(p.read_text()) if p.exists() else {}',
-    "data.update({",
-    '    "client_key": ' + pyStr(tokens.client_key) + ",",
-    '    "client_secret": ' + pyStr(tokens.client_secret) + ",",
-    '    "access_token": ' + pyStr(tokens.access_token) + ",",
-    '    "refresh_token": ' + pyStr(tokens.refresh_token) + ",",
-    '    "open_id": ' + pyStr(tokens.open_id) + ",",
-    '    "scope": ' + pyStr(tokens.scope) + ",",
-    '    "access_expires_at": ' + pyStr(tokens.access_expires_at) + ",",
-    "})",
-    'p.write_text(json.dumps(data, indent=2, sort_keys=True) + "\\n")',
-    'print("Updated:", p)',
-    "PYEOF",
-  ].join("\n");
-}
-
-function copyButton(targetId) {
-  return (
-    '<button class="copy" type="button" data-target="' +
-    escapeHtml(targetId) +
-    '">Copy</button>'
-  );
 }
 
 function errorPage(statusCode, heading, message) {
@@ -213,7 +175,6 @@ exports.handler = async function (event) {
   };
 
   const tokensJson = JSON.stringify(tokens, null, 2);
-  const snippet = buildSnippet(tokens);
   const stateJson = JSON.stringify(state);
 
   const inner =
@@ -221,25 +182,28 @@ exports.handler = async function (event) {
     '<div id="state-error" class="error-box">State validation failed &mdash; possible CSRF. Do not use these tokens.</div>\n' +
     '<div id="content">\n' +
     '<p class="ok">TikTok returned an access token.</p>\n' +
-    "<h2>Tokens received</h2>\n" +
-    '<div class="block">' +
-    copyButton("tokens-json") +
-    "<pre><code id=\"tokens-json\">" +
+    "<h2>Save the tokens to your project</h2>\n" +
+    "<p>Click the button below to download <code>tiktok_tokens.json</code>, then move the downloaded file to the <strong>root of your project repository</strong> &mdash; the same folder that contains <code>tiktok_auto_post/</code>. If a <code>tiktok_tokens.json</code> already exists there, this will overwrite it.</p>\n" +
+    '<p><a class="download-button" id="download-link" href="#" download="tiktok_tokens.json">&#x2B07; Download tiktok_tokens.json</a></p>\n' +
+    "<h2>File contents (reference)</h2>\n" +
+    "<pre><code>" +
     escapeHtml(tokensJson) +
-    "</code></pre></div>\n" +
-    "<h2>Run this to save</h2>\n" +
-    '<div class="block">' +
-    copyButton("snippet") +
-    "<pre><code id=\"snippet\">" +
-    escapeHtml(snippet) +
-    "</code></pre></div>\n" +
-    '<p>Run the command from the directory shown. It writes the tokens to <code>tiktok_tokens.json</code> next to the tool.</p>\n' +
+    "</code></pre>\n" +
+    "<h2>After saving</h2>\n" +
+    "<p>Your Python scripts read the file automatically. Verify with:</p>\n" +
+    "<pre><code>python3 tiktok_auto_post/tiktok_auth.py check</code></pre>\n" +
+    '<div class="warning-box">\n' +
+    '<strong>&#9888; Sensitive data &mdash; treat this file like a password.</strong>\n' +
+    "<ul>\n" +
+    "<li>Never share it. Never paste it in chat, email, or screenshots.</li>\n" +
+    "<li>Never commit it. The file is already in <code>.gitignore</code>, so git will refuse to add it.</li>\n" +
+    "<li>If you suspect it leaked, revoke the app in TikTok Settings &rarr; Security &rarr; Apps, then redo this flow to generate fresh tokens.</li>\n" +
+    "</ul>\n" +
+    "</div>\n" +
     "</div>\n" +
     "<script>\n" +
     "(function () {\n" +
-    "  var expected = " +
-    stateJson +
-    ";\n" +
+    "  var expected = " + stateJson + ";\n" +
     "  var params = new URLSearchParams(window.location.search);\n" +
     '  var received = params.get("state") || "";\n' +
     "  var stored = null;\n" +
@@ -250,20 +214,22 @@ exports.handler = async function (event) {
     '    if (content) { content.style.display = "none"; }\n' +
     '    var warn = document.getElementById("state-error");\n' +
     '    if (warn) { warn.style.display = "block"; }\n' +
+    "    return;\n" +
     "  }\n" +
-    "  var buttons = document.querySelectorAll(\".copy\");\n" +
-    "  for (var i = 0; i < buttons.length; i++) {\n" +
-    "    buttons[i].addEventListener(\"click\", function () {\n" +
-    '      var target = document.getElementById(this.getAttribute("data-target"));\n' +
-    "      if (!target) { return; }\n" +
-    "      var text = target.textContent;\n" +
-    "      var btn = this;\n" +
-    "      function done() { btn.textContent = \"Copied\"; setTimeout(function () { btn.textContent = \"Copy\"; }, 1500); }\n" +
-    "      if (navigator.clipboard && navigator.clipboard.writeText) {\n" +
-    "        navigator.clipboard.writeText(text).then(done, function () { window.prompt(\"Copy manually:\", text); });\n" +
-    "      } else {\n" +
-    "        window.prompt(\"Copy manually:\", text);\n" +
-    "      }\n" +
+    "  var tokensJson = " + JSON.stringify(tokensJson) + ";\n" +
+    '  var link = document.getElementById("download-link");\n' +
+    "  if (link) {\n" +
+    "    link.addEventListener(\"click\", function (e) {\n" +
+    "      e.preventDefault();\n" +
+    "      var blob = new Blob([tokensJson], { type: 'application/json' });\n" +
+    "      var url = URL.createObjectURL(blob);\n" +
+    "      var a = document.createElement('a');\n" +
+    "      a.href = url;\n" +
+    "      a.download = 'tiktok_tokens.json';\n" +
+    "      document.body.appendChild(a);\n" +
+    "      a.click();\n" +
+    "      document.body.removeChild(a);\n" +
+    "      URL.revokeObjectURL(url);\n" +
     "    });\n" +
     "  }\n" +
     "})();\n" +

@@ -1,5 +1,6 @@
 # segredos (API keys locais)
 segredos.txt
+tiktok_tokens.json
 *.pem
 *.key
 

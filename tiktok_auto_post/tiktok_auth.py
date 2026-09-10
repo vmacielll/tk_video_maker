@@ -32,7 +32,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 
-TOKENS_PATH = pathlib.Path(__file__).parent / "tiktok_tokens.json"
+TOKENS_PATH = pathlib.Path(__file__).parent.parent / "tiktok_tokens.json"
 TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 REFRESH_SKEW_SECONDS = 300  # refresh if expiring within 5 minutes
 HTTP_TIMEOUT_SECONDS = 30

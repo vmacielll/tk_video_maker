@@ -9,9 +9,11 @@ things and nothing else:
 - **upload** a video to TikTok via the Content Posting API (Direct Post)
 
 The OAuth **authorization flow** (the part where a human logs in to TikTok)
-lives in `../netlify-app/` and is deployed on Netlify. When that flow finishes,
-it hands you a snippet that writes the tokens to `tiktok_tokens.json` next to
-these scripts. That file is the single source of truth for OAuth state here.
+lives in `../tiktok-auth/` and is deployed on Netlify. When that flow finishes,
+the callback page offers a **Download tiktok_tokens.json** button — save the
+downloaded file to the **root of the project repo** (the same folder that
+contains this `tiktok_auto_post/` directory). That file is the single source
+of truth for OAuth state.
 
 No pip packages: Python **3.10+** standard library only.
 
@@ -21,13 +23,15 @@ Files:
 | --- | --- |
 | `tiktok_auth.py` | Token storage, expiry check, refresh, atomic save |
 | `tiktok_postar.py` | CLI that uploads a video and polls until processed |
-| `tiktok_tokens.json` | OAuth state (created by the OAuth flow, not committed) |
+
+`tiktok_tokens.json` lives at the **project root** (not here), is created by
+the OAuth callback flow, and is gitignored.
 
 ## Setup
 
-1. Deploy / open the Netlify authorization page (`../netlify-app/`).
-2. Complete the TikTok login. The callback page shows a snippet.
-3. Run that snippet. It writes `tiktok_tokens.json` here with these 7 fields:
+1. Deploy / open the Netlify authorization page (in `../tiktok-auth/netlify-app/`).
+2. Complete the TikTok login. The callback page offers a **Download tiktok_tokens.json** button.
+3. Move the downloaded file to the **project root** (the same folder that contains `tiktok_auto_post/`). If a previous `tiktok_tokens.json` is there, it's overwritten. The file should contain these 7 fields:
 
    ```json
    {
