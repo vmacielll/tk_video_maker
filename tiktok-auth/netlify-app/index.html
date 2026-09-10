@@ -31,26 +31,6 @@
     font-size: 1.4rem;
     margin: 0 0 1.25rem;
   }
-  label {
-    display: block;
-    font-size: 0.9rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-  }
-  input[type="text"] {
-    width: 100%;
-    padding: 0.6rem 0.7rem;
-    font-size: 1rem;
-    font-family: inherit;
-    border: 1px solid #c8c8cc;
-    border-radius: 6px;
-    background: #fff;
-    color: #111;
-  }
-  input[type="text"]:focus {
-    outline: 2px solid #111;
-    outline-offset: 1px;
-  }
   button {
     margin-top: 1rem;
     width: 100%;
@@ -64,8 +44,12 @@
     border-radius: 6px;
     cursor: pointer;
   }
-  button:hover {
+  button:hover:not(:disabled) {
     background: #333;
+  }
+  button:disabled {
+    background: #999;
+    cursor: not-allowed;
   }
   .hint {
     margin-top: 1.25rem;
@@ -86,18 +70,21 @@
 <body>
 <main>
   <h1>TikTok Auto · Authorize</h1>
-  <label for="client-key">Client Key</label>
-  <input id="client-key" type="text" autocomplete="off" spellcheck="false"
-         placeholder="from your TikTok for Developers app dashboard">
   <p class="error" id="error" role="alert"></p>
-  <button id="authorize" type="button">Authorize TikTok</button>
-  <p class="hint">This will redirect you to TikTok to grant <code>video.publish</code> permission. After you approve, you'll see a Python snippet to save the tokens.</p>
+  <button id="authorize" type="button" disabled>Authorize TikTok</button>
+  <p class="hint" id="status">Loading configuration&hellip;</p>
 </main>
 <script>
   (function () {
-    var input = document.getElementById("client-key");
     var button = document.getElementById("authorize");
     var error = document.getElementById("error");
+    var status = document.getElementById("status");
+    var clientKey = null;
+
+    function showError(msg) {
+      error.textContent = msg;
+      error.classList.add("visible");
+    }
 
     function randomState() {
       var bytes = new Uint8Array(16);
@@ -115,17 +102,32 @@
       return hex;
     }
 
+    fetch("/.netlify/functions/client-key", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) {
+          throw new Error("HTTP " + r.status);
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        clientKey = (data && data.client_key) || "";
+        if (!clientKey) {
+          showError("Client Key not configured. Set TIKTOK_CLIENT_KEY in the Netlify site's environment variables, then trigger a redeploy.");
+          status.textContent = "";
+          return;
+        }
+        button.disabled = false;
+        status.innerHTML = "This will redirect you to TikTok to grant <code>video.publish</code> permission. After you approve, you'll see a Python snippet to save the tokens.";
+      })
+      .catch(function (e) {
+        showError("Could not load configuration: " + (e && e.message ? e.message : "unknown error"));
+        status.textContent = "";
+      });
+
     button.addEventListener("click", function () {
-      var clientKey = input.value.trim();
       if (!clientKey) {
-        error.textContent = "Please enter your Client Key.";
-        error.classList.add("visible");
-        input.focus();
         return;
       }
-      error.classList.remove("visible");
-      error.textContent = "";
-
       var state = randomState();
       try {
         sessionStorage.setItem("tiktok_oauth_state", state);
