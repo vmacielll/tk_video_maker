@@ -138,7 +138,7 @@
       var redirectUri = window.location.origin + "/oauth/callback";
       var params = [
         "client_key=" + encodeURIComponent(clientKey),
-        "scope=" + encodeURIComponent("video.publish"),
+        "scope=" + encodeURIComponent("video.publish,video.upload"),
         "response_type=code",
         "redirect_uri=" + encodeURIComponent(redirectUri),
         "state=" + encodeURIComponent(state)
