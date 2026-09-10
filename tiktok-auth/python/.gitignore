@@ -1,0 +1,4 @@
+# Token file lives next to the Python scripts but must never be committed.
+# Created at runtime by the OAuth callback snippet, refreshed periodically
+# by tiktok_auth.py.
+tiktok_tokens.json

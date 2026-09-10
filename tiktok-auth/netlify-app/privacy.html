@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy · TikTok Auto</title>
+<style>
+  body {
+    margin: 0;
+    padding: 2rem 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    color: #111;
+    background: #f7f7f8;
+  }
+  main {
+    max-width: 46rem;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #e2e2e4;
+    border-radius: 8px;
+    padding: 2rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 1.5rem;
+  }
+  h2 {
+    font-size: 1.1rem;
+    margin: 1.75rem 0 0.5rem;
+  }
+  p, li {
+    font-size: 0.95rem;
+  }
+  ul {
+    padding-left: 1.25rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    border: 1px solid #e2e2e4;
+    padding: 0.5rem 0.6rem;
+    vertical-align: top;
+  }
+  th {
+    background: #f2f2f4;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: #f2f2f4;
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+  }
+  footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e2e4;
+    font-size: 0.8rem;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+
+  <h2>What data this app handles</h2>
+  <ul>
+    <li>The theme input you provide.</li>
+    <li>Generated phrases and caption text (produced by Groq).</li>
+    <li>Background images (provided by Pexels).</li>
+    <li>The rendered <code>.mp4</code> file, which is created and kept locally on your machine.</li>
+    <li>TikTok OAuth tokens, stored in <code>tiktok_tokens.json</code> on your machine.</li>
+  </ul>
+
+  <h2>What we do not collect</h2>
+  <p>There is no analytics, no tracking pixels, and no telemetry. Nothing about your usage is reported back to the authors of this tool.</p>
+
+  <h2>Third-party services that receive data</h2>
+  <table>
+    <thead>
+      <tr><th>Service</th><th>Data it receives</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Groq</td>
+        <td>The theme and prompts used to generate phrases and the caption.</td>
+      </tr>
+      <tr>
+        <td>Pexels</td>
+        <td>The image query used to find background images.</td>
+      </tr>
+      <tr>
+        <td>TikTok</td>
+        <td>The video and caption, sent via the Content Posting API.</td>
+      </tr>
+      <tr>
+        <td>Netlify</td>
+        <td>Hosts this OAuth callback page only. It receives the authorization <code>code</code>, exchanges it for tokens using your app&rsquo;s client secret, and returns the tokens to your browser in the snippet shown on screen.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Where data is stored</h2>
+  <p>API keys are stored locally in <code>segredos.txt</code> and OAuth tokens in <code>tiktok_tokens.json</code>. Both files live on your machine and are gitignored, so they are never committed to version control.</p>
+
+  <h2>Your rights</h2>
+  <ul>
+    <li>You can delete the local files at any time.</li>
+    <li>You can revoke this app&rsquo;s access from TikTok Settings &gt; Security &gt; Apps.</li>
+    <li>You can rotate your API keys whenever you want.</li>
+  </ul>
+
+  <footer>Last updated: 2026-09-10</footer>
+</main>
+</body>
+</html>

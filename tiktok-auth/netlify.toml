@@ -1,0 +1,19 @@
+[build]
+  base = "netlify-app"
+  publish = "."
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/oauth/callback"
+  to = "/.netlify/functions/callback"
+  status = 200
+
+[[redirects]]
+  from = "/terms"
+  to = "/terms.html"
+  status = 200
+
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200

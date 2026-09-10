@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok Auto · Authorize</title>
+<style>
+  :root {
+    color-scheme: light dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    padding: 2rem 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    color: #111;
+    background: #f7f7f8;
+  }
+  main {
+    max-width: 32rem;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #e2e2e4;
+    border-radius: 8px;
+    padding: 2rem;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 1.25rem;
+  }
+  label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 0.6rem 0.7rem;
+    font-size: 1rem;
+    font-family: inherit;
+    border: 1px solid #c8c8cc;
+    border-radius: 6px;
+    background: #fff;
+    color: #111;
+  }
+  input[type="text"]:focus {
+    outline: 2px solid #111;
+    outline-offset: 1px;
+  }
+  button {
+    margin-top: 1rem;
+    width: 100%;
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+    font-family: inherit;
+    font-weight: 600;
+    color: #fff;
+    background: #111;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #333;
+  }
+  .hint {
+    margin-top: 1.25rem;
+    font-size: 0.85rem;
+    color: #555;
+  }
+  .error {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: #b00020;
+    display: none;
+  }
+  .error.visible {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>TikTok Auto · Authorize</h1>
+  <label for="client-key">Client Key</label>
+  <input id="client-key" type="text" autocomplete="off" spellcheck="false"
+         placeholder="from your TikTok for Developers app dashboard">
+  <p class="error" id="error" role="alert"></p>
+  <button id="authorize" type="button">Authorize TikTok</button>
+  <p class="hint">This will redirect you to TikTok to grant <code>video.publish</code> permission. After you approve, you'll see a Python snippet to save the tokens.</p>
+</main>
+<script>
+  (function () {
+    var input = document.getElementById("client-key");
+    var button = document.getElementById("authorize");
+    var error = document.getElementById("error");
+
+    function randomState() {
+      var bytes = new Uint8Array(16);
+      if (window.crypto && window.crypto.getRandomValues) {
+        window.crypto.getRandomValues(bytes);
+      } else {
+        for (var i = 0; i < bytes.length; i++) {
+          bytes[i] = Math.floor(Math.random() * 256);
+        }
+      }
+      var hex = "";
+      for (var j = 0; j < bytes.length; j++) {
+        hex += ("0" + bytes[j].toString(16)).slice(-2);
+      }
+      return hex;
+    }
+
+    button.addEventListener("click", function () {
+      var clientKey = input.value.trim();
+      if (!clientKey) {
+        error.textContent = "Please enter your Client Key.";
+        error.classList.add("visible");
+        input.focus();
+        return;
+      }
+      error.classList.remove("visible");
+      error.textContent = "";
+
+      var state = randomState();
+      try {
+        sessionStorage.setItem("tiktok_oauth_state", state);
+      } catch (e) {
+        // sessionStorage may be unavailable; state validation will simply fail closed.
+      }
+
+      var redirectUri = window.location.origin + "/oauth/callback";
+      var params = [
+        "client_key=" + encodeURIComponent(clientKey),
+        "scope=" + encodeURIComponent("video.publish"),
+        "response_type=code",
+        "redirect_uri=" + encodeURIComponent(redirectUri),
+        "state=" + encodeURIComponent(state)
+      ];
+      var authorizeUrl = "https://www.tiktok.com/v2/auth/authorize/?" + params.join("&");
+      window.location.href = authorizeUrl;
+    });
+  })();
+</script>
+</body>
+</html>
