@@ -8,7 +8,7 @@ handles the three publishing steps:
 
     1. ``POST /v2/post/publish/video/init/`` — initialize the upload
     2. ``PUT <upload_url>`` with ``Content-Range`` — upload the file in chunks
-    3. ``GET /v2/post/publish/status/fetch/`` — poll until processing ends
+    3. ``POST /v2/post/publish/status/fetch/`` — poll until processing ends
 
 Design notes:
     * Stdlib only (``urllib``, ``json``, ``pathlib``, ``math``, ``time``).
@@ -176,14 +176,14 @@ def _poll_status(
     tokens: dict, publish_id: str, timeout: int = POLL_TIMEOUT_SECONDS
 ) -> dict:
     """Poll the publish status until complete, failed, or timed out."""
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    url = STATUS_URL + "?" + urllib.parse.urlencode({"publish_id": publish_id})
+    headers = _auth_headers(tokens)
+    body = json.dumps({"publish_id": publish_id}, ensure_ascii=False).encode("utf-8")
     deadline = time.monotonic() + timeout
     attempt = 0
 
     while True:
         attempt += 1
-        status, raw = _http_request("GET", url, headers, timeout=30)
+        status, raw = _http_request("POST", STATUS_URL, headers, body, timeout=30)
         text = raw.decode("utf-8", "replace")
         try:
             payload = json.loads(text)
