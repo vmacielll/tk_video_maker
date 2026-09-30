@@ -37,6 +37,7 @@ pro B2 automaticamente.
 import argparse
 import json
 import os
+import random
 import shutil
 import sys
 import tempfile
@@ -44,6 +45,7 @@ from datetime import datetime, timezone
 
 import gemini
 import nucleo
+import openverse_audio
 import pexels
 import temas
 
@@ -165,6 +167,24 @@ def main():
         raise SystemExit(f"Falha ao buscar fundos no Pexels: {e}")
     _stderr(f"       {len(imagens_bytes)} imagens")
 
+    # 3b) Música de fundo via Openverse (soft-fail: vídeo sai sem áudio)
+    _stderr("[3b/4] Música (Openverse audio)...")
+    audio_path = None
+    try:
+        busca_audio = (tema_obj.get("musica_busca") or tema_obj.get("busca")
+                       or "ambient hopeful inspirational background")
+        opcoes_audio = openverse_audio.buscar_opcoes(busca_audio, n=5)
+        if opcoes_audio:
+            pick = random.choice(opcoes_audio)
+            tmp_audio = tempfile.mktemp(suffix=".mp3")
+            openverse_audio.baixar_track(pick["url_download"], tmp_audio)
+            audio_path = tmp_audio
+            _stderr(f"       pick: {pick['title']} ({pick['duration_str']})")
+        else:
+            _stderr("       ! busca vazia, sem áudio")
+    except Exception as e:
+        _stderr(f"       ! áudio falhou (soft): {e}")
+
     # 4) Render do vídeo
     _stderr("[4/4] Renderizando .mp4 (pode levar ~30s)...")
     tmpdir = tempfile.mkdtemp(prefix="auto_gerar_")
@@ -189,6 +209,10 @@ def main():
             "cor_destaque": _hex_para_rgb(tema_obj.get("cor")),
             "nome": nome,
             "saida_dir": args.out,
+            "audio_path": audio_path,
+            "volume_audio": 0.5,
+            "fade_in_audio": 0.4,
+            "fade_out_audio": 0.8,
         }
         caminho_video = nucleo.gerar_video(bgs_paths, frases, opcoes)
 
@@ -199,6 +223,11 @@ def main():
         _stderr(f"       legenda:   {caminho_legenda}")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+        if audio_path:
+            try:
+                os.remove(audio_path)
+            except OSError:
+                pass
 
     # 5) Output JSON
     result = {

@@ -221,6 +221,11 @@
     } else {
       payload.imagem = imagemBase64;
     }
+    var audioId = audioPicker.oculto.value;
+    if (audioId) {
+      // trilha de fundo escolhida no picker de músicas (UUID string)
+      payload.audio_id = audioId;
+    }
 
     fetch("/api/gerar", {
       method: "POST",
@@ -656,6 +661,177 @@
         gerarLegendaBtn.disabled = false;
         gerarLegendaBtn.textContent = "Gerar legenda com IA";
       });
+  });
+
+  // ===== Música de fundo (picker em acordeão) =====
+  // Seção única e opcional: fica recolhida até o usuário abrir o cabeçalho.
+  // Nenhuma busca acontece sozinha — só ao clicar em "Buscar músicas".
+  var audioPicker = {
+    cabecalho: document.querySelector(".audio-cabecalho"),
+    conteudo: document.getElementById("audioConteudo"),
+    input: document.getElementById("musica-query"),
+    buscar: document.getElementById("musica-buscar"),
+    opcoes: document.getElementById("audioOpcoes"),
+    oculto: document.getElementById("audioId")
+  };
+
+  // Acordeão: abre/fecha o conteúdo e sincroniza o aria-expanded
+  // (o giro do chevron é só CSS, via [aria-expanded="true"])
+  function alternarAcordeaoAudio() {
+    var abrindo = audioPicker.conteudo.hidden;
+    audioPicker.conteudo.hidden = !abrindo;
+    audioPicker.cabecalho.setAttribute("aria-expanded", abrindo ? "true" : "false");
+  }
+
+  audioPicker.cabecalho.addEventListener("click", alternarAcordeaoAudio);
+  // Teclado: cabeçalho focável se comporta como disclosure (Enter/Espaço)
+  audioPicker.cabecalho.setAttribute("tabindex", "0");
+  audioPicker.cabecalho.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      alternarAcordeaoAudio();
+    }
+  });
+
+  function formatarDuracaoAudio(total) {
+    var s = Math.max(0, Math.floor(total || 0));
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function pausarAudiosDe(picker) {
+    var audios = picker.opcoes.querySelectorAll("audio");
+    Array.prototype.forEach.call(audios, function (a) {
+      if (!a.paused) { a.pause(); }
+    });
+  }
+
+  function pausarOutrosPreviews(atual) {
+    var audios = document.querySelectorAll(".audio-opcoes audio");
+    Array.prototype.forEach.call(audios, function (a) {
+      if (a !== atual && !a.paused) { a.pause(); }
+    });
+  }
+
+  function criarCartaoAudio(opcao) {
+    var card = document.createElement("div");
+    card.className = "audio-card";
+    card.dataset.id = String(opcao.id);
+
+    var topo = document.createElement("div");
+    topo.className = "audio-card-topo";
+
+    var titulo = document.createElement("span");
+    titulo.className = "audio-titulo";
+    titulo.textContent = opcao.title || "Trilha sem título";
+    titulo.title = titulo.textContent; // título completo quando truncar
+
+    var dur = document.createElement("span");
+    dur.className = "audio-duracao";
+    dur.textContent = opcao.duration_str || formatarDuracaoAudio(opcao.duration);
+
+    topo.appendChild(titulo);
+    topo.appendChild(dur);
+
+    var audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "none";
+    if (opcao.preview_url) { audio.src = opcao.preview_url; }
+    audio.setAttribute("aria-label", "Prévia: " + (opcao.title || "trilha"));
+    // toca só uma prévia por vez
+    audio.addEventListener("play", function () { pausarOutrosPreviews(audio); });
+
+    var escolher = document.createElement("button");
+    escolher.type = "button";
+    escolher.className = "audio-escolher";
+    escolher.setAttribute("aria-pressed", "false");
+    escolher.addEventListener("click", function () {
+      var id = card.dataset.id;
+      if (audioPicker.oculto.value === id) {
+        audioPicker.oculto.value = ""; // clicar de novo desmarca
+      } else {
+        audioPicker.oculto.value = id;
+      }
+      aplicarSelecaoAudio();
+    });
+
+    card.appendChild(topo);
+    card.appendChild(audio);
+    card.appendChild(escolher);
+    return card;
+  }
+
+  function aplicarSelecaoAudio() {
+    var selecionado = audioPicker.oculto.value;
+    var cards = audioPicker.opcoes.querySelectorAll(".audio-card");
+    Array.prototype.forEach.call(cards, function (card) {
+      var ativo = !!selecionado && card.dataset.id === selecionado;
+      card.classList.toggle("audio-card-selecionado", ativo);
+      var btn = card.querySelector(".audio-escolher");
+      if (btn) {
+        btn.textContent = ativo ? "Selecionada ✓" : "Escolher";
+        btn.setAttribute("aria-pressed", ativo ? "true" : "false");
+      }
+    });
+  }
+
+  function renderOpcoesAudio(opcoes) {
+    pausarAudiosDe(audioPicker);
+    audioPicker.opcoes.innerHTML = "";
+    if (!opcoes || !opcoes.length) {
+      var vazio = document.createElement("p");
+      vazio.className = "audio-status";
+      vazio.textContent = "Nenhuma trilha encontrada. Tente buscar outras.";
+      audioPicker.opcoes.appendChild(vazio);
+      return;
+    }
+    opcoes.forEach(function (opcao) {
+      audioPicker.opcoes.appendChild(criarCartaoAudio(opcao));
+    });
+    aplicarSelecaoAudio();
+  }
+
+  function buscarMusicas() {
+    var query = (audioPicker.input.value || "").trim();
+    if (!query) {
+      mostrarAlerta("Escreva um termo para buscar as músicas.");
+      return;
+    }
+    audioPicker.buscar.disabled = true;
+    // nova busca descarta a seleção atual
+    audioPicker.oculto.value = "";
+    aplicarSelecaoAudio();
+    pausarAudiosDe(audioPicker);
+    audioPicker.opcoes.innerHTML =
+      '<p class="audio-status"><span class="audio-spinner" aria-hidden="true"></span>Buscando opções…</p>';
+
+    fetch("/api/audio/buscar?query=" + encodeURIComponent(query))
+      .then(function (r) { return r.json(); })
+      .then(function (dados) {
+        if (!dados || !dados.ok) { throw new Error((dados && dados.erro) || "erro"); }
+        renderOpcoesAudio(dados.opcoes || []);
+      })
+      .catch(function () {
+        pausarAudiosDe(audioPicker);
+        audioPicker.opcoes.innerHTML = "";
+        var erro = document.createElement("p");
+        erro.className = "audio-status audio-status-erro";
+        erro.textContent = "Erro ao buscar trilhas. Tente novamente.";
+        audioPicker.opcoes.appendChild(erro);
+      })
+      .finally(function () {
+        audioPicker.buscar.disabled = false;
+      });
+  }
+
+  audioPicker.buscar.addEventListener("click", buscarMusicas);
+  // Enter no campo de busca também busca
+  audioPicker.input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      buscarMusicas();
+    }
   });
 
   carregarTemas();

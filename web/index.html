@@ -64,6 +64,23 @@
         <button id="gerar-frases" class="botao-download">Gerar frases com IA</button>
       </section>
 
+      <section class="cartao cartao-acordeao">
+        <h2 class="audio-cabecalho" aria-expanded="false" aria-controls="audioConteudo">
+          3. Músicas (opcional)
+          <span class="audio-chevron" aria-hidden="true">▸</span>
+        </h2>
+        <div class="audio-conteudo" id="audioConteudo" hidden>
+          <div class="musica-query-linha">
+            <input type="text" id="musica-query" class="musica-query"
+                   value="ambient hopeful inspirational background"
+                   placeholder="ambient hopeful inspirational background">
+            <button type="button" id="musica-buscar" class="botao-download">Buscar músicas</button>
+          </div>
+          <div class="audio-opcoes" id="audioOpcoes"></div>
+          <input type="hidden" id="audioId" name="audio_id">
+        </div>
+      </section>
+
       <section class="cartao" id="cartao-preview" hidden>
         <h2>Pré-visualização</h2>
         <div class="preview-wrap">
@@ -74,7 +91,7 @@
       </section>
 
       <section class="cartao">
-        <h2>3. Opções</h2>
+        <h2>4. Opções</h2>
         <div class="grade">
           <div class="campo campo-cheio">
             <span class="campo-rotulo" id="rotulo-template">Layout do texto</span>

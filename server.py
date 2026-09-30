@@ -6,6 +6,8 @@ Roda o frontend (pasta web/) e expõe a API:
     POST /api/gerar   -> gera um vídeo (JSON, imagem em base64)
     GET  /api/videos  -> lista os vídeos gerados
     GET  /videos/<n>  -> serve o arquivo .mp4
+    GET  /api/audio/buscar?tema=X|query=Y -> opções de trilha (Pixabay)
+    GET  /api/audio/preview/<id>           -> serve o MP3 (HTTP Range)
 
 Uso:
     python3 server.py            (porta 8000)
@@ -16,18 +18,37 @@ import os
 import io
 import json
 import time
+import atexit
+import shutil
+import random
 import base64
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, unquote
 
 import nucleo
 import pexels
 import temas
 import gemini
+import openverse_audio
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 SAIDA_WEB = os.path.join(BASE_DIR, "saida_web")
+
+# Sessão de áudio: temp dir criado no load.
+#   audio_url_map: track_id -> url_download (metadados, sem baixar)
+#   audio_cache:   track_id -> caminho local (baixado sob demanda)
+AUDIO_TEMP_DIR = tempfile.mkdtemp(prefix="audio_sess_")
+audio_url_map = {}
+audio_cache = {}
+
+
+def _limpar_audio_temp():
+    shutil.rmtree(AUDIO_TEMP_DIR, ignore_errors=True)
+
+
+atexit.register(_limpar_audio_temp)
 
 TIPOS = {
     ".html": "text/html; charset=utf-8",
@@ -110,6 +131,91 @@ def listar_videos():
     return [{"nome": n, "url": "/videos/" + n} for _, n in itens]
 
 
+def _nome_arquivo_audio(track_id):
+    """Nome de arquivo seguro pra um id (UUID) do Openverse."""
+    seguro = "".join(
+        c if (c.isalnum() or c in "._-") else "_" for c in str(track_id))
+    return "track_" + seguro + ".mp3"
+
+
+def _baixar_para_cache(track_id, url):
+    """Baixa o MP3 sob demanda e registra em `audio_cache`.
+
+    Retorna o caminho local, ou None se a URL não existir / o download falhar.
+    """
+    if not url:
+        return None
+    try:
+        track_id = str(track_id)
+        destino = os.path.join(AUDIO_TEMP_DIR, _nome_arquivo_audio(track_id))
+        if not os.path.exists(destino):
+            openverse_audio.baixar_track(url, destino)
+        audio_cache[track_id] = destino
+        return destino
+    except Exception:
+        return None
+
+
+def _buscar_audio(query, n=5):
+    """Busca até N trilhas no Openverse — SÓ metadados, sem baixar nada.
+
+    Popula `audio_url_map` (id -> url_download) pra que o preview e o `/api/gerar`
+    baixem sob demanda. A resposta fica rápida (sem esperar os MP3).
+    """
+    opcoes = openverse_audio.buscar_opcoes(query, n=n)
+    for op in opcoes:
+        try:
+            audio_url_map[str(op["id"])] = op["url_download"]
+        except (KeyError, TypeError):
+            continue
+    return opcoes
+
+
+def _busca_audio_do_payload(dados):
+    """Resolve a query de música a partir do payload (tema ou busca direta)."""
+    tema = (dados.get("tema") or "").strip()
+    if tema:
+        tema_obj = temas.obter_tema(tema)
+        if tema_obj:
+            return (tema_obj.get("musica_busca") or tema_obj.get("busca") or "").strip()
+    return (dados.get("musica_busca") or dados.get("busca") or "").strip()
+
+
+def _resolver_audio_path(audio_id, query):
+    """Devolve o caminho local do áudio escolhido (baixando sob demanda), ou None.
+
+    1) Se já está em `audio_cache`, usa.
+    2) Se a URL é conhecida (`audio_url_map`), baixa e cacheia.
+    3) Senão, re-busca (`_buscar_audio`) pra refrescar os mapas e tenta o id;
+       se o id sumiu, cai num pick aleatório do top-5.
+    """
+    if audio_id is None:
+        return None
+    audio_id = str(audio_id)
+
+    caminho = audio_cache.get(audio_id)
+    if caminho and os.path.exists(caminho):
+        return caminho
+
+    url = audio_url_map.get(audio_id)
+    if url:
+        caminho = _baixar_para_cache(audio_id, url)
+        if caminho:
+            return caminho
+
+    try:
+        opcoes = _buscar_audio(query, n=5)
+    except Exception:
+        return None
+    if not opcoes:
+        return None
+    for op in opcoes:
+        if str(op["id"]) == audio_id:
+            return _baixar_para_cache(str(op["id"]), op["url_download"])
+    pick = random.choice(opcoes)
+    return _baixar_para_cache(str(pick["id"]), pick["url_download"])
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "GeradorVideos/1.0"
 
@@ -138,6 +244,57 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(dados)
 
+    def _servir_mp3(self, caminho):
+        """Serve um .mp3 com suporte a HTTP Range (206 Partial Content)."""
+        try:
+            tamanho = os.path.getsize(caminho)
+        except OSError:
+            self.send_error(404)
+            return
+        cabecalho = self.headers.get("Range") or ""
+        try:
+            with open(caminho, "rb") as f:
+                if cabecalho.startswith("bytes=") and tamanho > 0:
+                    spec = cabecalho[len("bytes="):].split(",")[0].strip()
+                    inicio_s, _, fim_s = spec.partition("-")
+                    if inicio_s == "":
+                        # Sufixo: últimos N bytes.
+                        n_ult = int(fim_s or 0)
+                        inicio = max(tamanho - n_ult, 0)
+                        fim = tamanho - 1
+                    else:
+                        inicio = int(inicio_s)
+                        fim = int(fim_s) if fim_s else tamanho - 1
+                    if inicio > fim or inicio >= tamanho:
+                        self.send_response(416)
+                        self.send_header("Content-Range", "bytes */%d" % tamanho)
+                        self.end_headers()
+                        return
+                    fim = min(fim, tamanho - 1)
+                    f.seek(inicio)
+                    dados = f.read(fim - inicio + 1)
+                    self.send_response(206)
+                    self.send_header("Content-Type", "audio/mpeg")
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Range",
+                                     "bytes %d-%d/%d" % (inicio, fim, tamanho))
+                    self.send_header("Content-Length", str(len(dados)))
+                    self.end_headers()
+                    self.wfile.write(dados)
+                else:
+                    dados = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "audio/mpeg")
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Content-Length", str(len(dados)))
+                    self.end_headers()
+                    self.wfile.write(dados)
+        except Exception:
+            try:
+                self.send_error(404)
+            except Exception:
+                pass
+
     # ---------- GET ----------
     def do_GET(self):
         caminho = urlparse(self.path).path
@@ -150,6 +307,15 @@ class Handler(BaseHTTPRequestHandler):
         elif caminho == "/api/templates":
             self._json({"templates": [{"id": i, "nome": n}
                                       for i, n in nucleo.TEMPLATES.items()]})
+        elif caminho == "/api/audio/buscar":
+            self._api_audio_buscar()
+        elif caminho.startswith("/api/audio/preview/"):
+            # ids do Openverse são UUIDs (strings), não inteiros.
+            track_id = unquote(os.path.basename(caminho))
+            if not track_id:
+                self.send_error(404)
+            else:
+                self._api_audio_preview(track_id)
         elif caminho.startswith("/videos/"):
             nome = os.path.basename(caminho)
             self._arquivo(os.path.join(SAIDA_WEB, nome), TIPOS[".mp4"])
@@ -160,6 +326,43 @@ class Handler(BaseHTTPRequestHandler):
                 self._arquivo(alvo, TIPOS[ext])
             else:
                 self.send_error(404)
+
+    def _api_audio_buscar(self):
+        """GET /api/audio/buscar?tema=<nome> OU ?query=<texto>.
+
+        Busca até 5 trilhas e já baixa cada uma pro temp dir (cache/preview).
+        Soft-fail: retorna `opcoes: []` se a chave não estiver configurada.
+        """
+        try:
+            params = dict(parse_qsl(urlparse(self.path).query))
+            tema = (params.get("tema") or "").strip()
+            query = (params.get("query") or "").strip()
+            if tema:
+                tema_obj = temas.obter_tema(tema)
+                if tema_obj is None:
+                    return self._json({"ok": False, "erro": "Tema não encontrado."}, 400)
+                query = (tema_obj.get("musica_busca") or tema_obj.get("busca")
+                         or "ambient hopeful inspirational background")
+            if not query:
+                return self._json(
+                    {"ok": False, "erro": "Informe um tema ou uma busca."}, 400)
+            opcoes = _buscar_audio(query, n=5)
+            self._json({"ok": True, "opcoes": opcoes})
+        except Exception as e:
+            self._json({"ok": False, "erro": "Erro ao buscar áudio: %s" % e,
+                        "opcoes": []}, 500)
+
+    def _api_audio_preview(self, track_id):
+        """GET /api/audio/preview/<track_id> -> serve o MP3 com Range."""
+        caminho = audio_cache.get(track_id)
+        if not caminho or not os.path.exists(caminho):
+            # Download sob demanda (a URL veio do /api/audio/buscar).
+            url = audio_url_map.get(track_id)
+            caminho = _baixar_para_cache(track_id, url) if url else None
+        if not caminho or not os.path.exists(caminho):
+            self.send_error(404)
+            return
+        self._servir_mp3(caminho)
 
     # ---------- POST ----------
     def do_POST(self):
@@ -215,7 +418,24 @@ class Handler(BaseHTTPRequestHandler):
                 "cor_destaque": resolve_cor_destaque(dados),
                 "nome": "video_%d" % int(time.time() * 1000),
                 "saida_dir": SAIDA_WEB,
+                "volume_audio": _num(dados, "volume_audio", 0.5),
+                "fade_in_audio": _num(dados, "fade_in_audio", 0.4),
+                "fade_out_audio": _num(dados, "fade_out_audio", 0.8),
             }
+
+            # Trilha de fundo opcional: `audio_id` escolhido no picker.
+            # ids do Openverse são UUIDs (strings).
+            audio_id = dados.get("audio_id")
+            if audio_id is not None:
+                audio_id = str(audio_id).strip() or None
+            if audio_id is not None:
+                busca_audio = (_busca_audio_do_payload(dados)
+                               or "ambient hopeful inspirational background")
+                try:
+                    opcoes["audio_path"] = _resolver_audio_path(audio_id, busca_audio)
+                except Exception:
+                    opcoes["audio_path"] = None
+
             saida = nucleo.gerar_video(imagem, frases, opcoes)
             nome = os.path.basename(saida)
             self._json({"ok": True, "nome": nome, "url": "/videos/" + nome})
@@ -319,6 +539,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+            # Música de fundo (soft-fail: sem chave/erro -> lista vazia).
+            busca_audio = ((dados.get("musica_busca") or "").strip()
+                           or tema_obj.get("musica_busca")
+                           or tema_obj.get("busca")
+                           or "ambient hopeful inspirational background")
+            try:
+                audio_opcoes = _buscar_audio(busca_audio, n=5)
+            except Exception:
+                audio_opcoes = []
+
             imagens_data = ["data:image/jpeg;base64," + base64.b64encode(b).decode() for b in imagens_bytes]
             self._json({
                 "ok": True,
@@ -327,6 +557,7 @@ class Handler(BaseHTTPRequestHandler):
                 "imagens": imagens_data,
                 "cor": tema_obj["cor"],
                 "template": nucleo.sortear_template(),
+                "audio_opcoes": audio_opcoes,
             })
         except Exception as e:
             self._json({"ok": False, "erro": "Erro: %s" % e}, 500)

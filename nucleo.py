@@ -354,21 +354,110 @@ def _achar_ffmpeg():
     return "ffmpeg"
 
 
-def montar_video(frames, saida, duracao, fade):
+def _achar_ffprobe():
+    for p in ("/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe", "/usr/bin/ffprobe"):
+        if os.path.exists(p):
+            return p
+    return "ffprobe"
+
+
+def _duracao_audio(caminho):
+    """Retorna a duração do áudio em segundos, ou None se não conseguir medir."""
+    try:
+        r = subprocess.run(
+            [_achar_ffprobe(), "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", caminho],
+            capture_output=True, text=True)
+        if r.returncode == 0:
+            return float(r.stdout.strip())
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def _cadeia_audio(caminho, entrada, duracao_video, volume, fade_in, fade_out):
+    """Monta o filter chain do áudio e devolve a string do filtro `[aout]`.
+
+    `caminho` é o arquivo de áudio (pra medir a duração) e `entrada` é o
+    label do input no filtergraph (ex.: "[1:a]"). Loop (`aloop`) a trilha
+    pra preencher o vídeo quando ela for mais curta; `atrim` corta exatamente
+    na duração do vídeo quando ela for mais longa.
+    """
+    duracao_video = max(float(duracao_video), 0.1)
+    dur_fonte = _duracao_audio(caminho)
+
+    cadeia = []
+    if dur_fonte is None or dur_fonte < duracao_video:
+        cadeia.append("aloop=loop=-1:size=1e9")
+    cadeia.append("volume=%.3f" % float(volume))
+    if float(fade_in) > 0:
+        cadeia.append("afade=in:st=0:d=%.3f" % float(fade_in))
+    if float(fade_out) > 0:
+        fade_out_st = max(duracao_video - float(fade_out), 0.0)
+        cadeia.append("afade=out:st=%.3f:d=%.3f" % (fade_out_st, float(fade_out)))
+    cadeia.append("atrim=duration=%.3f" % duracao_video)
+    cadeia.append("asetpts=PTS-STARTPTS")
+    return "%s%s[aout]" % (entrada, ",".join(cadeia))
+
+
+def montar_video(frames, saida, duracao, fade,
+                 audio_path=None, volume_audio=0.5,
+                 fade_in_audio=0.4, fade_out_audio=0.8):
     """Monta o .mp4 a partir de sequências de frames (Ken Burns).
 
     frames: lista de DIRETÓRIOS; cada um contém f_%04d.png (uma sequência
     por frase). Aplica xfade de transição entre as sequências.
+
+    audio_path: caminho opcional de um MP3 de trilha de fundo. Quando None,
+    o comportamento é idêntico ao anterior (sem áudio).
+    volume_audio / fade_in_audio / fade_out_audio: ajustes da trilha.
     """
     n = len(frames)
+    usar_audio = bool(audio_path) and os.path.exists(audio_path)
+
+    # Duração total do vídeo (as xfades sobrepõem as sequências).
+    if n == 1:
+        duracao_video = float(duracao)
+    else:
+        duracao_video = n * duracao - (n - 1) * fade
+    duracao_video = max(float(duracao_video), 0.1)
+
     cmd = [_achar_ffmpeg(), "-y"]
     for dir in frames:
         cmd += ["-framerate", str(FPS), "-i", os.path.join(dir, "f_%04d.png")]
+    if usar_audio:
+        cmd += ["-i", audio_path]
+
+    if not usar_audio:
+        # Comportamento original, sem áudio.
+        if n == 1:
+            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", "-r", str(FPS), saida]
+        else:
+            filtros = []
+            prev = "0:v"
+            for i in range(1, n):
+                offset = i * (duracao - fade)
+                out = "v%d" % i
+                filtros.append(
+                    "[%s][%d:v]xfade=transition=fade:duration=%.3f:offset=%.3f[%s]"
+                    % (prev, i, fade, offset, out))
+                prev = out
+            fc = ";".join(filtros)
+            cmd += ["-filter_complex", fc, "-map", "[%s]" % prev,
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart", "-r", str(FPS), saida]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError("ffmpeg falhou:\n" + r.stderr[-1500:])
+        return
+
+    # --- Com áudio: filter_complex combina o vídeo e a cadeia de áudio ---
+    filtros = []
     if n == 1:
-        cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", "-r", str(FPS), saida]
+        filtros.append("[0:v]copy[vout]")
+        v_final = "vout"
     else:
-        filtros = []
         prev = "0:v"
         for i in range(1, n):
             offset = i * (duracao - fade)
@@ -377,10 +466,18 @@ def montar_video(frames, saida, duracao, fade):
                 "[%s][%d:v]xfade=transition=fade:duration=%.3f:offset=%.3f[%s]"
                 % (prev, i, fade, offset, out))
             prev = out
-        fc = ";".join(filtros)
-        cmd += ["-filter_complex", fc, "-map", "[%s]" % prev,
-                "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", "-r", str(FPS), saida]
+        v_final = prev
+
+    # O áudio é o input de índice `n` (depois dos n diretórios de frames).
+    filtros.append(_cadeia_audio(audio_path, "[%d:a]" % n, duracao_video,
+                                 volume_audio, fade_in_audio, fade_out_audio))
+
+    cmd += ["-filter_complex", ";".join(filtros),
+            "-map", "[%s]" % v_final, "-map", "[aout]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", "-r", str(FPS),
+            "-c:a", "aac", "-b:a", "128k", saida]
+
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("ffmpeg falhou:\n" + r.stderr[-1500:])
@@ -396,7 +493,11 @@ def gerar_video(imagem, frases, opcoes=None):
         cor (tupla r,g,b), escurecer (int 0-255),
         tamanho (float, escala da fonte), template (str),
         cor_destaque (tupla r,g,b),
-        nome (str, sem extensão), saida_dir (str)
+        nome (str, sem extensão), saida_dir (str),
+        audio_path (str com o MP3 da trilha; None desliga o áudio),
+        volume_audio (float, default 0.5),
+        fade_in_audio (float, default 0.4),
+        fade_out_audio (float, default 0.8)
     Retorna o caminho completo do .mp4 gerado.
     """
     opcoes = opcoes or {}
@@ -410,6 +511,20 @@ def gerar_video(imagem, frases, opcoes=None):
     cor_destaque = tuple(opcoes.get("cor_destaque", COR_DESTAQUE_PADRAO))
     nome = opcoes.get("nome", "video")
     saida_dir = opcoes.get("saida_dir", tempfile.mkdtemp(prefix="saida_"))
+
+    # Trilha de fundo (opcional). Aceita caminho ou callable que devolva o
+    # caminho; qualquer outra coisa (ou caminho inexistente) -> sem áudio.
+    audio_path = opcoes.get("audio_path")
+    if callable(audio_path):
+        try:
+            audio_path = audio_path()
+        except Exception:
+            audio_path = None
+    if not isinstance(audio_path, str) or not os.path.exists(audio_path):
+        audio_path = None
+    volume_audio = float(opcoes.get("volume_audio", 0.5))
+    fade_in_audio = float(opcoes.get("fade_in_audio", 0.4))
+    fade_out_audio = float(opcoes.get("fade_out_audio", 0.8))
 
     caminho_fonte = resolver_fonte(fonte_nome)
     if not os.path.exists(caminho_fonte):
@@ -451,7 +566,11 @@ def gerar_video(imagem, frases, opcoes=None):
 
     os.makedirs(saida_dir, exist_ok=True)
     saida = os.path.join(saida_dir, nome + ".mp4")
-    montar_video(dirs, saida, duracao, fade)
+    montar_video(dirs, saida, duracao, fade,
+                 audio_path=audio_path,
+                 volume_audio=volume_audio,
+                 fade_in_audio=fade_in_audio,
+                 fade_out_audio=fade_out_audio)
     return saida
 
 
