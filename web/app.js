@@ -191,6 +191,189 @@
   }
 
   // Geração
+  var publicarCheckbox = document.getElementById("publicarCheckbox");
+  var publicarAviso = document.getElementById("publicarAviso");
+  var statusPill = document.getElementById("statusPill");
+  var publicarResultado = document.getElementById("publicar-resultado");
+  var publicarPublishId = document.getElementById("publicarPublishId");
+  var publicarTikTokLink = document.getElementById("publicarTikTokLink");
+  var ultimoVideoPath = null;
+  var STORAGE_JOB_KEY = "tkvm_publish_job_id";
+
+  // Pre-check: fetch /api/tiktok/status on page load to enable/disable the
+  // publish checkbox and show the inline notice when tokens are missing.
+  fetch("/api/tiktok/status")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var ok = data && data.configured && data.scope_ok;
+      publicarCheckbox.disabled = !ok;
+      publicarAviso.hidden = ok;
+      if (!ok) {
+        publicarCheckbox.checked = false;
+      }
+    })
+    .catch(function () {
+      // If the endpoint errors, leave the checkbox enabled but warn the user.
+      publicarAviso.hidden = false;
+    });
+
+  // On page load, re-attach to a stale job from a previous session if any.
+  tentarReanexar();
+
+  function tentarReanexar() {
+    var jobId = localStorage.getItem(STORAGE_JOB_KEY);
+    if (!jobId) return;
+    // Mark UI as re-attaching so the user knows something is happening.
+    statusPill.hidden = false;
+    statusPill.textContent = "Reanexando job anterior…";
+    statusPill.className = "status-pill status-running";
+
+    var eventSource = new EventSource("/api/publish/stream?job_id=" + encodeURIComponent(jobId));
+    eventSource.onmessage = function (e) { /* default "message" type — ignore */ };
+    eventSource.addEventListener("started", function (e) { handlePublishEvent("started", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("generating", function (e) { handlePublishEvent("generating", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("generated", function (e) { handlePublishEvent("generated", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("publishing", function (e) { handlePublishEvent("publishing", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("completed", function (e) {
+      handlePublishEvent("completed", parseJsonSafe(e.data));
+      eventSource.close();
+    });
+    eventSource.addEventListener("error", function () {
+      // Server closed the stream (job done or unknown). Either way, we're done.
+      eventSource.close();
+    });
+  }
+
+  function parseJsonSafe(s) {
+    try { return JSON.parse(s); } catch (e) { return {}; }
+  }
+
+  function handlePublishEvent(eventType, data) {
+    if (!data) data = {};
+    switch (eventType) {
+      case "started":
+        if (data.job_id) localStorage.setItem(STORAGE_JOB_KEY, data.job_id);
+        atualizarStatusPill("Iniciado", "status-running");
+        break;
+      case "generating":
+        atualizarStatusPill("Gerando…", "status-running");
+        break;
+      case "generated":
+        if (data.video_path) {
+          ultimoVideoPath = data.video_path;
+          // Also make the regular video download link available
+          resultado.hidden = false;
+          var base = data.video_path.split("/").pop();
+          var url = "/videos/" + base;
+          videoResultado.src = url;
+          linkDownload.href = url;
+          linkDownload.setAttribute("download", base);
+        }
+        atualizarStatusPill("Vídeo gerado", "status-running");
+        break;
+      case "publishing":
+        atualizarStatusPill("Postando no TikTok…", "status-running");
+        break;
+      case "completed":
+        localStorage.removeItem(STORAGE_JOB_KEY);
+        atualizarStatusPill("Concluído!", "status-done");
+        if (data.publish_id) {
+          publicarResultado.hidden = false;
+          publicarPublishId.textContent = data.publish_id;
+          // TikTok doesn't have a public direct-link from publish_id; show
+          // the user's profile or a generic search fallback.
+          publicarTikTokLink.href = "https://www.tiktok.com/";
+          publicarResultado.scrollIntoView({ behavior: "smooth" });
+        }
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+        break;
+      case "error":
+        localStorage.removeItem(STORAGE_JOB_KEY);
+        atualizarStatusPill("Erro: " + (data.error || "desconhecido"), "status-error");
+        if (ultimoVideoPath) {
+          // Save-as-fallback: video is still on disk; offer download.
+          var base2 = ultimoVideoPath.split("/").pop();
+          var url2 = "/videos/" + base2;
+          mostrarAlerta("Falha ao postar no TikTok. <a href='" + url2 + "' download>Baixar vídeo</a> para postar manualmente.");
+        } else {
+          mostrarAlerta("Erro: " + (data.error || "desconhecido"));
+        }
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+        break;
+    }
+  }
+
+  function atualizarStatusPill(texto, classe) {
+    statusPill.hidden = false;
+    statusPill.textContent = texto;
+    statusPill.className = "status-pill " + (classe || "status-running");
+  }
+
+  function iniciarPublicacao(payload) {
+    payload.publish = true;
+    publicarResultado.hidden = true;
+    statusPill.hidden = false;
+    statusPill.textContent = "Iniciando…";
+    statusPill.className = "status-pill status-running";
+
+    fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function (resp) {
+        if (!resp.ok || !resp.body) {
+          return resp.json().then(function (d) {
+            throw new Error(d.erro || ("HTTP " + resp.status));
+          });
+        }
+        return consumirSSE(resp);
+      })
+      .catch(function (err) {
+        mostrarAlerta("Não foi possível iniciar a publicação: " + err.message);
+        atualizarStatusPill("Erro: " + err.message, "status-error");
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+      });
+  }
+
+  function consumirSSE(response) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = "";
+    return new Promise(function (resolve, reject) {
+      function pump() {
+        reader.read().then(function (r) {
+          if (r.done) { resolve(); return; }
+          buffer += decoder.decode(r.value, { stream: true });
+          var idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            var block = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            processarBlocoSSE(block);
+          }
+          pump();
+        }).catch(reject);
+      }
+      pump();
+    });
+  }
+
+  function processarBlocoSSE(block) {
+    var eventType = "message";
+    var data = "";
+    var linhas = block.split("\n");
+    for (var i = 0; i < linhas.length; i++) {
+      var ln = linhas[i];
+      if (ln.indexOf("event:") === 0) eventType = ln.slice(6).trim();
+      else if (ln.indexOf("data:") === 0) data += ln.slice(5).trim();
+    }
+    if (!data) return;
+    handlePublishEvent(eventType, parseJsonSafe(data));
+  }
+
   gerarBtn.addEventListener("click", function () {
     if (!imagemBase64) {
       mostrarAlerta("Escolha uma imagem de fundo primeiro.");
@@ -200,10 +383,6 @@
       mostrarAlerta("Escreva pelo menos uma frase.");
       return;
     }
-
-    gerarBtn.disabled = true;
-    gerarBtn.textContent = "Gerando…";
-    esconderAlerta();
 
     var payload = {
       textos: textos.value,
@@ -226,6 +405,22 @@
       // trilha de fundo escolhida no picker de músicas (UUID string)
       payload.audio_id = audioId;
     }
+
+    if (publicarCheckbox.checked) {
+      // Branch: publish via /api/publish (SSE)
+      gerarBtn.disabled = true;
+      gerarBtn.textContent = "Publicando…";
+      esconderAlerta();
+      iniciarPublicacao(payload);
+      return;
+    }
+
+    // Default: generate only via /api/gerar (sync)
+    gerarBtn.disabled = true;
+    gerarBtn.textContent = "Gerando…";
+    esconderAlerta();
+    publicarResultado.hidden = true;
+    statusPill.hidden = true;
 
     fetch("/api/gerar", {
       method: "POST",

@@ -44,108 +44,126 @@
         <div id="auto-status" class="dica" hidden></div>
       </section>
 
-      <section class="cartao">
-        <h2>1. Imagem de fundo</h2>
-        <div id="dropzone" class="dropzone">
-          <input type="file" id="imagem" accept="image/*" hidden>
-          <div class="dropzone-inner">
-            <span class="dropzone-texto" id="dropzone-texto">Arraste uma imagem aqui ou clique para escolher</span>
-          </div>
-        </div>
-        <div class="preview-clip">
-          <img id="preview" class="preview" alt="Pré-visualização" hidden>
-        </div>
-      </section>
+      <section class="cartao cartao-upload">
+        <h2>Upload + textos</h2>
+        <p class="dica">Envie sua imagem, escreva as frases e gere o vídeo. Opcionalmente publique no TikTok.</p>
 
-      <section class="cartao">
-        <h2>2. Frases</h2>
-        <textarea id="textos" rows="6" placeholder="Uma frase por linha.&#10;&#10;Exemplo:&#10;Se você vê o mesmo número o tempo todo&#10;o universo quer te dizer algo&#10;333 → seus guias estão ao seu lado"></textarea>
-        <p class="dica">Cada linha vira uma tela do vídeo. Emojis são removidos automaticamente do texto.</p>
-        <button id="gerar-frases" class="botao-download">Gerar frases com IA</button>
-      </section>
-
-      <section class="cartao cartao-acordeao">
-        <h2 class="audio-cabecalho" aria-expanded="false" aria-controls="audioConteudo">
-          3. Músicas (opcional)
-          <span class="audio-chevron" aria-hidden="true">▸</span>
-        </h2>
-        <div class="audio-conteudo" id="audioConteudo" hidden>
-          <div class="musica-query-linha">
-            <input type="text" id="musica-query" class="musica-query"
-                   value="ambient hopeful inspirational background"
-                   placeholder="ambient hopeful inspirational background">
-            <button type="button" id="musica-buscar" class="botao-download">Buscar músicas</button>
-          </div>
-          <div class="audio-opcoes" id="audioOpcoes"></div>
-          <input type="hidden" id="audioId" name="audio_id">
-        </div>
-      </section>
-
-      <section class="cartao" id="cartao-preview" hidden>
-        <h2>Pré-visualização</h2>
-        <div class="preview-wrap">
-          <img id="preview-frame-bg" class="preview-frame-layer" alt="Fundo animado">
-          <img id="preview-frame-overlay" class="preview-frame-layer" alt="Texto e moldura estáticos">
-        </div>
-        <p class="dica">Mostra como a primeira frase vai aparecer no vídeo.</p>
-      </section>
-
-      <section class="cartao">
-        <h2>4. Opções</h2>
-        <div class="grade">
-          <div class="campo campo-cheio">
-            <span class="campo-rotulo" id="rotulo-template">Layout do texto</span>
-            <div class="chips" id="templates" role="group" aria-labelledby="rotulo-template">
-              <button type="button" class="chip chip-auto chip-ativo" data-template="" aria-pressed="true">Automático</button>
-              <button type="button" class="chip" data-template="inferior" aria-pressed="false">Inferior</button>
-              <button type="button" class="chip" data-template="cartao" aria-pressed="false">Cartão</button>
-              <button type="button" class="chip" data-template="destaque" aria-pressed="false">Palavra em destaque</button>
-              <button type="button" class="chip" data-template="topo_base" aria-pressed="false">Topo + base</button>
-              <button type="button" class="chip" data-template="lista" aria-pressed="false">Lista numerada</button>
-              <button type="button" class="chip" data-template="moldura" aria-pressed="false">Moldura</button>
+        <div class="upload-painel">
+          <section class="cartao">
+            <h2>1. Imagem de fundo</h2>
+            <div id="dropzone" class="dropzone">
+              <input type="file" id="imagem" accept="image/*" hidden>
+              <div class="dropzone-inner">
+                <span class="dropzone-texto" id="dropzone-texto">Arraste uma imagem aqui ou clique para escolher</span>
+              </div>
             </div>
-            <p class="dica">"Automático" alterna o layout a cada vídeo. Escolha um layout fixo para usá-lo em todas as telas.</p>
-          </div>
-          <div class="campo">
-            <label for="duracao">Duração por frase (s)</label>
-            <input type="number" id="duracao" value="2.5" step="0.1" min="0.5">
-          </div>
-          <div class="campo">
-            <label for="fade">Transição (s)</label>
-            <input type="number" id="fade" value="0.4" step="0.1" min="0">
-          </div>
-          <div class="campo">
-            <label for="fonte">Fonte</label>
-            <select id="fonte">
-              <option value="georgia bold" selected>Georgia Bold</option>
-              <option value="arial bold">Arial Bold</option>
-              <option value="georgia">Georgia</option>
-              <option value="arial">Arial</option>
-              <option value="helvetica">Helvetica</option>
-              <option value="times">Times</option>
-              <option value="futura">Futura</option>
-            </select>
-          </div>
-          <div class="campo">
-            <label for="cor">Cor do texto</label>
-            <input type="color" id="cor" value="#ffffff">
-          </div>
-          <div class="campo">
-            <label for="cor-destaque">Cor de destaque</label>
-            <input type="color" id="cor-destaque" value="#d4af37">
-          </div>
-          <div class="campo campo-cheio">
-            <label for="escurecer">Escurecer fundo: <span id="escurecer-valor">70</span></label>
-            <input type="range" id="escurecer" min="0" max="255" value="70">
-          </div>
-          <div class="campo campo-cheio">
-            <label for="tamanho">Tamanho do texto: <span id="tamanho-valor">100</span>%</label>
-            <input type="range" id="tamanho" min="50" max="150" value="100">
-          </div>
-        </div>
-      </section>
+            <div class="preview-clip">
+              <img id="preview" class="preview" alt="Pré-visualização" hidden>
+            </div>
+          </section>
 
-      <button id="gerar" class="botao-primario">Gerar vídeo</button>
+          <section class="cartao">
+            <h2>2. Frases</h2>
+            <textarea id="textos" rows="6" placeholder="Uma frase por linha.&#10;&#10;Exemplo:&#10;Se você vê o mesmo número o tempo todo&#10;o universo quer te dizer algo&#10;333 → seus guias estão ao seu lado"></textarea>
+            <p class="dica">Cada linha vira uma tela do vídeo. Emojis são removidos automaticamente do texto.</p>
+            <button id="gerar-frases" class="botao-download">Gerar frases com IA</button>
+          </section>
+
+          <section class="cartao cartao-acordeao">
+            <h2 class="audio-cabecalho" aria-expanded="false" aria-controls="audioConteudo">
+              3. Músicas (opcional)
+              <span class="audio-chevron" aria-hidden="true">▸</span>
+            </h2>
+            <div class="audio-conteudo" id="audioConteudo" hidden>
+              <div class="musica-query-linha">
+                <input type="text" id="musica-query" class="musica-query"
+                       value="ambient hopeful inspirational background"
+                       placeholder="ambient hopeful inspirational background">
+                <button type="button" id="musica-buscar" class="botao-download">Buscar músicas</button>
+              </div>
+              <div class="audio-opcoes" id="audioOpcoes"></div>
+              <input type="hidden" id="audioId" name="audio_id">
+            </div>
+          </section>
+
+          <section class="cartao" id="cartao-preview" hidden>
+            <h2>Pré-visualização</h2>
+            <div class="preview-wrap">
+              <img id="preview-frame-bg" class="preview-frame-layer" alt="Fundo animado">
+              <img id="preview-frame-overlay" class="preview-frame-layer" alt="Texto e moldura estáticos">
+            </div>
+            <p class="dica">Mostra como a primeira frase vai aparecer no vídeo.</p>
+          </section>
+
+          <section class="cartao">
+            <h2>4. Opções</h2>
+            <div class="grade">
+              <div class="campo campo-cheio">
+                <span class="campo-rotulo" id="rotulo-template">Layout do texto</span>
+                <div class="chips" id="templates" role="group" aria-labelledby="rotulo-template">
+                  <button type="button" class="chip chip-auto chip-ativo" data-template="" aria-pressed="true">Automático</button>
+                  <button type="button" class="chip" data-template="inferior" aria-pressed="false">Inferior</button>
+                  <button type="button" class="chip" data-template="cartao" aria-pressed="false">Cartão</button>
+                  <button type="button" class="chip" data-template="destaque" aria-pressed="false">Palavra em destaque</button>
+                  <button type="button" class="chip" data-template="topo_base" aria-pressed="false">Topo + base</button>
+                  <button type="button" class="chip" data-template="lista" aria-pressed="false">Lista numerada</button>
+                  <button type="button" class="chip" data-template="moldura" aria-pressed="false">Moldura</button>
+                </div>
+                <p class="dica">"Automático" alterna o layout a cada vídeo. Escolha um layout fixo para usá-lo em todas as telas.</p>
+              </div>
+              <div class="campo">
+                <label for="duracao">Duração por frase (s)</label>
+                <input type="number" id="duracao" value="2.5" step="0.1" min="0.5">
+              </div>
+              <div class="campo">
+                <label for="fade">Transição (s)</label>
+                <input type="number" id="fade" value="0.4" step="0.1" min="0">
+              </div>
+              <div class="campo">
+                <label for="fonte">Fonte</label>
+                <select id="fonte">
+                  <option value="georgia bold" selected>Georgia Bold</option>
+                  <option value="arial bold">Arial Bold</option>
+                  <option value="georgia">Georgia</option>
+                  <option value="arial">Arial</option>
+                  <option value="helvetica">Helvetica</option>
+                  <option value="times">Times</option>
+                  <option value="futura">Futura</option>
+                </select>
+              </div>
+              <div class="campo">
+                <label for="cor">Cor do texto</label>
+                <input type="color" id="cor" value="#ffffff">
+              </div>
+              <div class="campo">
+                <label for="cor-destaque">Cor de destaque</label>
+                <input type="color" id="cor-destaque" value="#d4af37">
+              </div>
+              <div class="campo campo-cheio">
+                <label for="escurecer">Escurecer fundo: <span id="escurecer-valor">70</span></label>
+                <input type="range" id="escurecer" min="0" max="255" value="70">
+              </div>
+              <div class="campo campo-cheio">
+                <label for="tamanho">Tamanho do texto: <span id="tamanho-valor">100</span>%</label>
+                <input type="range" id="tamanho" min="50" max="150" value="100">
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="publicar-linha">
+          <label class="publicar-checkbox">
+            <input type="checkbox" id="publicarCheckbox">
+            <span>Publicar no TikTok</span>
+          </label>
+          <div id="publicarAviso" class="aviso-tokens" hidden>
+            TikTok não conectado. <a href="tiktok-auth/" target="_blank">Configurar</a>
+          </div>
+          <div id="statusPill" class="status-pill" hidden></div>
+        </div>
+
+        <button id="gerar" class="botao-primario">Gerar vídeo</button>
+      </section>
 
       <div id="alerta" class="alerta" hidden></div>
 
@@ -153,6 +171,12 @@
         <h2>Vídeo gerado</h2>
         <video id="video-resultado" controls></video>
         <a id="link-download" class="botao-download" download>Baixar vídeo</a>
+      </section>
+
+      <section id="publicar-resultado" class="cartao" hidden>
+        <h2>Publicação</h2>
+        <p><strong>publish_id:</strong> <code id="publicarPublishId"></code></p>
+        <p><a id="publicarTikTokLink" href="#" target="_blank">Abrir post no TikTok</a></p>
       </section>
 
       <section id="resultado-legenda" class="cartao" hidden>
