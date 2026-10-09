@@ -32,6 +32,7 @@ import temas
 import gemini
 import openverse_audio
 from tiktok_auto_post import tiktok_auth
+import job_store
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -63,6 +64,22 @@ TIPOS = {
     ".svg": "image/svg+xml",
     ".ico": "image/x-icon",
 }
+
+
+# Job store for the publish flow (issue #4). In-memory; reboot loses jobs.
+# Background GC evicts jobs older than the TTL (1h) every 5min.
+JOB_STORE = job_store.JobStore(ttl_seconds=3600, gc_interval_seconds=300)
+JOB_STORE.start_gc()
+
+
+def _stop_job_store_gc():
+    try:
+        JOB_STORE.stop_gc()
+    except Exception:
+        pass
+
+
+atexit.register(_stop_job_store_gc)
 
 
 def parse_cor(s):
