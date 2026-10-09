@@ -37,8 +37,10 @@ pro B2 automaticamente.
 import argparse
 import json
 import os
+import pathlib
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -48,6 +50,7 @@ import nucleo
 import openverse_audio
 import pexels
 import temas
+from tiktok_auto_post import tiktok_auth
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +75,175 @@ def _stamp():
 def _stderr(msg):
     """Log de progresso em stderr; stdout fica reservado pro JSON final."""
     print(msg, file=sys.stderr, flush=True)
+
+
+def _resolve_audio_path(
+    audio_flag,
+    tema_obj,
+    searcher=None,
+    downloader=None,
+):
+    """Return the path to a downloaded background audio file, or None.
+
+    When `audio_flag` is not "auto", returns None immediately without
+    contacting the audio source. When "auto", searches for tracks, picks
+    one at random, downloads it to a temp file, and returns the path.
+    Soft-fails to None on any network or search error.
+    """
+    if audio_flag != "auto":
+        return None
+
+    if searcher is None:
+        searcher = openverse_audio.buscar_opcoes
+    if downloader is None:
+        downloader = openverse_audio.baixar_track
+
+    busca_audio = (
+        tema_obj.get("musica_busca")
+        or tema_obj.get("busca")
+        or "ambient hopeful inspirational background"
+    )
+
+    try:
+        opcoes_audio = searcher(busca_audio, n=5)
+    except Exception as e:
+        _stderr(f"       ! audio search failed (soft): {e}")
+        return None
+
+    if not opcoes_audio:
+        return None
+
+    pick = random.choice(opcoes_audio)
+    tmp_audio = tempfile.mktemp(suffix=".mp3")
+    downloader(pick["url_download"], tmp_audio)
+    return tmp_audio
+
+
+def _pre_check_tokens(tokens_path):
+    """Return a snapshot of TikTok auth state for a token file.
+
+    Returns a dict with three boolean/string fields:
+    - ``configured``: whether the file exists, parses, and is not expired.
+    - ``expires_at``: ISO 8601 string from the token file, or None.
+    - ``scope_ok``: whether the scope includes ``video.publish``.
+
+    Never returns token secrets. Always safe to expose to the user.
+    """
+    path = pathlib.Path(tokens_path) if not isinstance(tokens_path, pathlib.Path) else tokens_path
+    try:
+        tokens = tiktok_auth.load_tokens(path)
+    except Exception:
+        return {"configured": False, "expires_at": None, "scope_ok": False}
+
+    if tokens is None:
+        return {"configured": False, "expires_at": None, "scope_ok": False}
+
+    expires_at = tokens.get("access_expires_at")
+    if tiktok_auth.is_expired(tokens):
+        return {"configured": False, "expires_at": expires_at, "scope_ok": False}
+
+    scope = tokens.get("scope", "") or ""
+    scope_ok = "video.publish" in [s.strip() for s in scope.split(",") if s.strip()]
+    return {"configured": True, "expires_at": expires_at, "scope_ok": scope_ok}
+
+
+_DEFAULT_POSTAR_BIN = (
+    pathlib.Path(__file__).resolve().parent / "tiktok_auto_post" / "tiktok_postar.py"
+)
+
+
+def _invoke_publish_subprocess(
+    video_path,
+    caption=None,
+    *,
+    postar_bin=None,
+    env=None,
+    timeout=180,
+):
+    """Invoke tiktok_postar.py as a subprocess and return the publish block.
+
+    Maps the subprocess exit code to a normalized error_type:
+    - 0: success (publish_id parsed from stdout JSON)
+    - 1: user error
+    - 2: auth error
+    - 3: upload error
+    - other: upload (fallback)
+
+    `postar_bin` overrides the default postar script path (useful for tests).
+    `env` is merged on top of os.environ for the subprocess.
+    """
+    if postar_bin is None:
+        postar_bin = os.environ.get("TIKTOK_POSTAR_BIN", str(_DEFAULT_POSTAR_BIN))
+
+    cmd = [sys.executable, str(postar_bin), str(video_path)]
+    if caption:
+        cmd += ["--caption", caption]
+
+    full_env = os.environ.copy()
+    if env:
+        full_env.update(env)
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=full_env,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "attempted": True,
+            "success": False,
+            "publish_id": None,
+            "error": "tiktok_postar timed out",
+            "error_type": "upload",
+        }
+    except Exception as e:
+        return {
+            "attempted": True,
+            "success": False,
+            "publish_id": None,
+            "error": f"failed to invoke tiktok_postar: {e}",
+            "error_type": "upload",
+        }
+
+    if proc.returncode == 0:
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return {
+                "attempted": True,
+                "success": False,
+                "publish_id": None,
+                "error": "tiktok_postar returned non-JSON on success: " + (proc.stdout[:200] or ""),
+                "error_type": "upload",
+            }
+        return {
+            "attempted": True,
+            "success": True,
+            "publish_id": payload.get("publish_id"),
+            "error": None,
+            "error_type": None,
+        }
+
+    if proc.returncode == 1:
+        error_type = "user"
+    elif proc.returncode == 2:
+        error_type = "auth"
+    else:
+        error_type = "upload"
+
+    err = (proc.stderr or proc.stdout or "").strip()
+    if not err:
+        err = f"tiktok_postar exited with code {proc.returncode}"
+    return {
+        "attempted": True,
+        "success": False,
+        "publish_id": None,
+        "error": err,
+        "error_type": error_type,
+    }
 
 
 def _legenda_curta(tema_nome, frases):
@@ -132,7 +304,37 @@ def main():
                     help=f"Diretório de saída (default: {SAIDA_AUTO})")
     ap.add_argument("--cta", default=None,
                     help="CTA customizado (override do tema)")
+    ap.add_argument("--publish", choices=["yes", "no"], default="no",
+                    help="Post the generated video to TikTok automatically (default: no)")
+    ap.add_argument("--audio", choices=["auto", "off"], default="off",
+                    help="Whether to embed audio (Openverse auto-pick) in the video (default: off)")
     args = ap.parse_args()
+
+    # Pre-check TikTok tokens when --publish=yes. Bail out before doing any
+    # expensive work (Groq / Pexels / ffmpeg) so the user doesn't wait 30s
+    # just to discover the OAuth flow is missing.
+    if args.publish == "yes":
+        pre = _pre_check_tokens(tiktok_auth.TOKENS_PATH)
+        if not pre["configured"] or not pre["scope_ok"]:
+            block = {
+                "attempted": True,
+                "success": False,
+                "publish_id": None,
+                "error": (
+                    f"TikTok tokens not configured "
+                    f"(configured={pre['configured']}, scope_ok={pre['scope_ok']}, "
+                    f"expires_at={pre['expires_at']})"
+                ),
+                "error_type": "auth",
+            }
+            result = {
+                "tema": args.tema,
+                "publish": block,
+                "gerado_em": datetime.now(timezone.utc).isoformat(),
+            }
+            _stderr(f"       ! pre-check failed: {block['error']}")
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            sys.exit(2)
 
     os.makedirs(args.out, exist_ok=True)
 
@@ -167,23 +369,13 @@ def main():
         raise SystemExit(f"Falha ao buscar fundos no Pexels: {e}")
     _stderr(f"       {len(imagens_bytes)} imagens")
 
-    # 3b) Música de fundo via Openverse (soft-fail: vídeo sai sem áudio)
-    _stderr("[3b/4] Música (Openverse audio)...")
-    audio_path = None
-    try:
-        busca_audio = (tema_obj.get("musica_busca") or tema_obj.get("busca")
-                       or "ambient hopeful inspirational background")
-        opcoes_audio = openverse_audio.buscar_opcoes(busca_audio, n=5)
-        if opcoes_audio:
-            pick = random.choice(opcoes_audio)
-            tmp_audio = tempfile.mktemp(suffix=".mp3")
-            openverse_audio.baixar_track(pick["url_download"], tmp_audio)
-            audio_path = tmp_audio
-            _stderr(f"       pick: {pick['title']} ({pick['duration_str']})")
-        else:
-            _stderr("       ! busca vazia, sem áudio")
-    except Exception as e:
-        _stderr(f"       ! áudio falhou (soft): {e}")
+    # 3b) Música de fundo (controlled by --audio; default off = no audio)
+    if args.audio == "auto":
+        _stderr("[3b/4] Música (Openverse audio)...")
+        audio_path = _resolve_audio_path(args.audio, tema_obj)
+    else:
+        _stderr("[3b/4] Música: off (default)")
+        audio_path = None
 
     # 4) Render do vídeo
     _stderr("[4/4] Renderizando .mp4 (pode levar ~30s)...")
@@ -241,8 +433,27 @@ def main():
         "video_made_with_ai": True,
         "gerado_em": datetime.now(timezone.utc).isoformat(),
     }
+    publish_block = None
+    if args.publish == "yes":
+        _stderr("[5/5] Postando no TikTok...")
+        publish_block = _invoke_publish_subprocess(
+            caminho_video,
+            caption=legenda,
+        )
+        result["publish"] = publish_block
+        if publish_block["success"]:
+            _stderr(f"       postado: {publish_block['publish_id']}")
+        else:
+            _stderr(f"       ! falha ({publish_block['error_type']}): {publish_block['error']}")
     # stdout = JSON puro
     print(json.dumps(result, ensure_ascii=False, indent=2))
+
+    if publish_block and not publish_block["success"]:
+        if publish_block["error_type"] == "auth":
+            sys.exit(2)
+        if publish_block["error_type"] == "user":
+            sys.exit(1)
+        sys.exit(3)
 
 
 if __name__ == "__main__":
