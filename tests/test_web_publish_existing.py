@@ -60,8 +60,17 @@ def _post_json(port, path, body, timeout_s=10):
 
 
 def _start_server(out_dir, python_bin, mock_result="success"):
-    """Spawn server.py with PYTHONPATH stubs and TIKTOK_POSTAR_BIN=mock. Yields (port, proc, real_paths_for_cleanup)."""
+    """Spawn server.py with PYTHONPATH stubs and TIKTOK_POSTAR_BIN=mock.
+    Returns (port, proc, real_tokens_backup, real_tokens_symlink, real_saida_symlink).
+    The backup is the original tiktok_tokens.json content (or None); the
+    symlinks must be torn down by the caller (see _stop_server).
+    """
     real_tokens = WORKTREE_ROOT / "tiktok_tokens.json"
+    # Snapshot the original (regular file) before unlinking — we restore it
+    # in _stop_server so the test never destroys the developer's real tokens.
+    backup = None
+    if real_tokens.is_file() and not real_tokens.is_symlink():
+        backup = real_tokens.read_bytes()
     if real_tokens.exists() or real_tokens.is_symlink():
         real_tokens.unlink()
     tokens_file = out_dir.parent / "tiktok_tokens.json"
@@ -90,19 +99,23 @@ def _start_server(out_dir, python_bin, mock_result="success"):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    return port, proc, real_tokens, real_saida
+    return port, proc, backup, real_tokens, real_saida
 
 
-def _stop_server(proc, real_tokens, real_saida):
+def _stop_server(proc, backup, real_tokens, real_saida):
     proc.terminate()
     try:
         proc.wait(timeout=3)
     except subprocess.TimeoutExpired:
         proc.kill()
+    # Tear down the symlinks.
     if real_tokens.is_symlink() or real_tokens.exists():
         real_tokens.unlink()
     if real_saida.is_symlink():
         real_saida.unlink()
+    # Restore the developer's original tiktok_tokens.json (if any).
+    if backup is not None:
+        real_tokens.write_bytes(backup)
 
 
 # --- Fixtures --------------------------------------------------------------
@@ -117,12 +130,12 @@ def republish_server(tmp_path, python_bin):
     (out_dir / video_name).write_bytes(b"FAKE-EXISTING-MP4")
     (out_dir / (video_name + ".txt")).write_text("caption from sidecar\n", encoding="utf-8")
 
-    port, proc, real_tokens, real_saida = _start_server(out_dir, python_bin, "success")
+    port, proc, backup, real_tokens, real_saida = _start_server(out_dir, python_bin, "success")
     try:
         assert _wait_for_server(port), "server did not start"
         yield port, video_name
     finally:
-        _stop_server(proc, real_tokens, real_saida)
+        _stop_server(proc, backup, real_tokens, real_saida)
 
 
 # --- Tests -----------------------------------------------------------------
@@ -181,14 +194,14 @@ def test_publish_existing_fails_when_no_legenda_no_sidecar(tmp_path, python_bin)
     video_name = "video_no_caption.mp4"
     (out_dir / video_name).write_bytes(b"FAKE-MP4-NO-SIDECAR")
 
-    port, proc, real_tokens, real_saida = _start_server(out_dir, python_bin, "success")
+    port, proc, backup, real_tokens, real_saida = _start_server(out_dir, python_bin, "success")
     try:
         assert _wait_for_server(port)
         status, body = _post_json(port, "/api/publish_existing", {"video": video_name})
         assert status == 400
         assert "legenda" in body.get("erro", "").lower()
     finally:
-        _stop_server(proc, real_tokens, real_saida)
+        _stop_server(proc, backup, real_tokens, real_saida)
 
 
 def test_publish_existing_propagates_postar_failure(republish_server, tmp_path, python_bin):
@@ -202,7 +215,7 @@ def test_publish_existing_propagates_postar_failure(republish_server, tmp_path, 
         target = Path(os.readlink(out_dir))
     else:
         target = out_dir
-    port2, proc, real_tokens, real_saida = _start_server(target, python_bin, "upload_error")
+    port2, proc, backup, real_tokens, real_saida = _start_server(target, python_bin, "upload_error")
     try:
         assert _wait_for_server(port2)
         status, body = _post_json(
@@ -212,4 +225,4 @@ def test_publish_existing_propagates_postar_failure(republish_server, tmp_path, 
         assert body["ok"] is False
         assert body.get("error_type") == "upload"
     finally:
-        _stop_server(proc, real_tokens, real_saida)
+        _stop_server(proc, backup, real_tokens, real_saida)
