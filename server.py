@@ -22,7 +22,9 @@ import atexit
 import shutil
 import random
 import base64
+import queue
 import tempfile
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qsl, unquote
 
@@ -172,6 +174,59 @@ def _baixar_para_cache(track_id, url):
         return destino
     except Exception:
         return None
+
+
+def _run_generation_payload(dados):
+    """Run the video generation pipeline from a /api/gerar-shaped payload.
+
+    Returns the path to the generated .mp4 on success. Raises ``ValueError``
+    on user-input errors (missing image, no phrases) and re-raises other
+    exceptions (e.g. ffmpeg failures) for the caller to surface.
+    """
+    if not dados.get("imagem") and not dados.get("imagens"):
+        raise ValueError("Envie uma imagem de fundo.")
+    frases = [l.strip() for l in (dados.get("textos") or "").splitlines() if l.strip()]
+    if not frases:
+        raise ValueError("Escreva pelo menos uma frase.")
+
+    from PIL import Image
+    if dados.get("imagens"):
+        imagem_bytes = decodificar_imagem(dados["imagens"][0])
+        imagem = io.BytesIO(imagem_bytes)
+        Image.open(io.BytesIO(imagem_bytes)).load()
+    else:
+        imagem_bytes = decodificar_imagem(dados["imagem"])
+        imagem = io.BytesIO(imagem_bytes)
+        Image.open(io.BytesIO(imagem_bytes)).load()
+
+    opcoes = {
+        "duracao": _num(dados, "duracao", nucleo.DURACAO_PADRAO),
+        "fade": _num(dados, "fade", nucleo.FADE_PADRAO),
+        "fonte": (dados.get("fonte") or nucleo.FONTE_PADRAO),
+        "cor": parse_cor(dados.get("cor")),
+        "escurecer": int(_num(dados, "escurecer", nucleo.ESCURECER_PADRAO)),
+        "tamanho": escala_de(dados),
+        "template": resolve_template(dados, auto=True),
+        "cor_destaque": resolve_cor_destaque(dados),
+        "nome": "video_%d" % int(time.time() * 1000),
+        "saida_dir": SAIDA_WEB,
+        "volume_audio": _num(dados, "volume_audio", 0.5),
+        "fade_in_audio": _num(dados, "fade_in_audio", 0.4),
+        "fade_out_audio": _num(dados, "fade_out_audio", 0.8),
+    }
+
+    audio_id = dados.get("audio_id")
+    if audio_id is not None:
+        audio_id = str(audio_id).strip() or None
+    if audio_id is not None:
+        busca_audio = (_busca_audio_do_payload(dados)
+                       or "ambient hopeful inspirational background")
+        try:
+            opcoes["audio_path"] = _resolver_audio_path(audio_id, busca_audio)
+        except Exception:
+            opcoes["audio_path"] = None
+
+    return nucleo.gerar_video(imagem, frases, opcoes)
 
 
 def _buscar_audio(query, n=5):
@@ -329,6 +384,8 @@ class Handler(BaseHTTPRequestHandler):
             self._api_audio_buscar()
         elif caminho == "/api/tiktok/status":
             self._api_tiktok_status()
+        elif caminho == "/api/publish/stream":
+            self._api_publish_stream()
         elif caminho.startswith("/api/audio/preview/"):
             # ids do Openverse são UUIDs (strings), não inteiros.
             track_id = unquote(os.path.basename(caminho))
@@ -401,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
         caminho = urlparse(self.path).path
         if caminho == "/api/gerar":
             self._gerar()
+        elif caminho == "/api/publish":
+            self._api_publish()
         elif caminho == "/api/preview":
             self._preview()
         elif caminho == "/api/preview_camadas":
@@ -420,61 +479,178 @@ class Handler(BaseHTTPRequestHandler):
         try:
             tamanho = int(self.headers.get("Content-Length", 0))
             dados = json.loads(self.rfile.read(tamanho).decode("utf-8"))
-
-            if not dados.get("imagem") and not dados.get("imagens"):
-                return self._json({"ok": False, "erro": "Envie uma imagem de fundo."}, 400)
-            frases = [l.strip() for l in (dados.get("textos") or "").splitlines() if l.strip()]
-            if not frases:
-                return self._json({"ok": False, "erro": "Escreva pelo menos uma frase."}, 400)
-
-            from PIL import Image
-            try:
-                if dados.get("imagens"):
-                    imagem = [io.BytesIO(decodificar_imagem(x)) for x in dados["imagens"]]
-                    Image.open(io.BytesIO(decodificar_imagem(dados["imagens"][0]))).load()
-                else:
-                    imagem_bytes = decodificar_imagem(dados["imagem"])
-                    imagem = io.BytesIO(imagem_bytes)
-                    Image.open(io.BytesIO(imagem_bytes)).load()
-            except Exception:
-                return self._json({"ok": False, "erro": "Imagem inválida."}, 400)
-
-            opcoes = {
-                "duracao": _num(dados, "duracao", nucleo.DURACAO_PADRAO),
-                "fade": _num(dados, "fade", nucleo.FADE_PADRAO),
-                "fonte": (dados.get("fonte") or nucleo.FONTE_PADRAO),
-                "cor": parse_cor(dados.get("cor")),
-                "escurecer": int(_num(dados, "escurecer", nucleo.ESCURECER_PADRAO)),
-                "tamanho": escala_de(dados),
-                "template": resolve_template(dados, auto=True),
-                "cor_destaque": resolve_cor_destaque(dados),
-                "nome": "video_%d" % int(time.time() * 1000),
-                "saida_dir": SAIDA_WEB,
-                "volume_audio": _num(dados, "volume_audio", 0.5),
-                "fade_in_audio": _num(dados, "fade_in_audio", 0.4),
-                "fade_out_audio": _num(dados, "fade_out_audio", 0.8),
-            }
-
-            # Trilha de fundo opcional: `audio_id` escolhido no picker.
-            # ids do Openverse são UUIDs (strings).
-            audio_id = dados.get("audio_id")
-            if audio_id is not None:
-                audio_id = str(audio_id).strip() or None
-            if audio_id is not None:
-                busca_audio = (_busca_audio_do_payload(dados)
-                               or "ambient hopeful inspirational background")
-                try:
-                    opcoes["audio_path"] = _resolver_audio_path(audio_id, busca_audio)
-                except Exception:
-                    opcoes["audio_path"] = None
-
-            saida = nucleo.gerar_video(imagem, frases, opcoes)
+            saida = _run_generation_payload(dados)
             nome = os.path.basename(saida)
             self._json({"ok": True, "nome": nome, "url": "/videos/" + nome})
+        except ValueError as e:
+            self._json({"ok": False, "erro": str(e)}, 400)
         except RuntimeError as e:
             self._json({"ok": False, "erro": str(e)}, 500)
         except Exception as e:
             self._json({"ok": False, "erro": "Erro ao gerar: %s" % e}, 500)
+
+    def _api_publish(self):
+        """POST /api/publish — start a publish job and stream events as SSE.
+
+        Body: same as /api/gerar (imagens or imagem + textos) + `publish: bool`.
+        Returns: text/event-stream with events: started, generating, generated,
+        publishing, completed | error.
+        """
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            return self._json({"ok": False, "erro": "Content-Type must be application/json"}, 415)
+        try:
+            tamanho = int(self.headers.get("Content-Length", 0))
+            dados = json.loads(self.rfile.read(tamanho).decode("utf-8"))
+        except Exception as e:
+            return self._json({"ok": False, "erro": "Bad request: %s" % e}, 400)
+
+        publish_flag = bool(dados.get("publish", False))
+        job_id = JOB_STORE.create()
+
+        # SSE headers
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        event_queue = queue.Queue()
+
+        def emit(event_type, event_data):
+            # Store with type + data wrapper so the replay endpoint can emit
+            # the right SSE event name. The wire format (data:) carries only
+            # the inner data.
+            JOB_STORE.append_event(job_id, {"type": event_type, "data": event_data})
+            event_queue.put((event_type, event_data))
+
+        def worker():
+            try:
+                JOB_STORE.set_state(job_id, "running")
+
+                tiktok_status = tiktok_auth.tiktok_status()
+                emit("started", {"job_id": job_id, "tiktok_status": tiktok_status})
+
+                if not tiktok_status["configured"] or not tiktok_status["scope_ok"]:
+                    JOB_STORE.set_state(job_id, "error")
+                    emit("error", {"error_type": "auth", "error": "TikTok tokens not configured"})
+                    return
+
+                try:
+                    emit("generating", {"frame": "0/0"})
+                    video_path = _run_generation_payload(dados)
+                    if not video_path:
+                        JOB_STORE.set_state(job_id, "error")
+                        emit("error", {"error_type": "upload", "error": "Generation produced no video"})
+                        return
+                    emit("generated", {"video_path": video_path})
+                except ValueError as e:
+                    JOB_STORE.set_state(job_id, "error")
+                    emit("error", {"error_type": "user", "error": str(e)})
+                    return
+                except Exception as e:
+                    JOB_STORE.set_state(job_id, "error")
+                    emit("error", {"error_type": "upload", "error": "Generation failed: %s" % e})
+                    return
+
+                if publish_flag:
+                    emit("publishing", {})
+                    try:
+                        caption = None
+                        caption_path = video_path + ".txt"
+                        if os.path.exists(caption_path):
+                            with open(caption_path) as f:
+                                caption = f.read().strip()
+                        import auto_gerar
+                        result = auto_gerar._invoke_publish_subprocess(video_path, caption=caption)
+                        if result["success"]:
+                            JOB_STORE.set_state(job_id, "done")
+                            emit("completed", {"publish_id": result["publish_id"], "video_path": video_path})
+                        else:
+                            JOB_STORE.set_state(job_id, "error")
+                            emit("error", {"error_type": result["error_type"], "error": result["error"]})
+                    except Exception as e:
+                        JOB_STORE.set_state(job_id, "error")
+                        emit("error", {"error_type": "upload", "error": "Publish failed: %s" % e})
+                else:
+                    JOB_STORE.set_state(job_id, "done")
+                    emit("completed", {"publish_id": None, "video_path": video_path})
+            except Exception as e:
+                try:
+                    JOB_STORE.set_state(job_id, "error")
+                    emit("error", {"error_type": "upload", "error": "Worker crashed: %s" % e})
+                except Exception:
+                    pass
+            finally:
+                event_queue.put(None)  # sentinel
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        # Main thread: write events to SSE
+        while True:
+            try:
+                item = event_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if item is None:
+                break
+            event_type, event_data = item
+            sse_line = "event: %s\ndata: %s\n\n" % (
+                event_type,
+                json.dumps(event_data),
+            )
+            try:
+                self.wfile.write(sse_line.encode("utf-8"))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                break
+
+    def _api_publish_stream(self):
+        """GET /api/publish/stream?job_id=X — re-attach to an existing job.
+
+        Replays events from the JobStore. If the job is still running, polls
+        for new events and streams them until the job is done.
+        """
+        params = dict(parse_qsl(urlparse(self.path).query))
+        job_id = (params.get("job_id") or "").strip()
+        if not job_id:
+            return self._json({"ok": False, "erro": "job_id required"}, 400)
+        try:
+            JOB_STORE.get_state(job_id)
+        except KeyError:
+            return self._json({"ok": False, "erro": "unknown job_id"}, 404)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        last_index = 0
+        while True:
+            try:
+                events = JOB_STORE.get_events(job_id)
+            except KeyError:
+                break
+            for i in range(last_index, len(events)):
+                event = events[i]
+                sse_line = "event: %s\ndata: %s\n\n" % (
+                    event.get("type", "message"),
+                    json.dumps(event.get("data", {})),
+                )
+                try:
+                    self.wfile.write(sse_line.encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
+            last_index = len(events)
+
+            try:
+                state = JOB_STORE.get_state(job_id)
+            except KeyError:
+                break
+            if state in ("done", "error"):
+                break
+            time.sleep(0.1)
 
     def _preview(self):
         try:
