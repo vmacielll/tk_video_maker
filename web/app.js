@@ -545,13 +545,58 @@
           link.textContent = "Baixar";
           link.className = "botao-download";
 
+          var btnPublicar = document.createElement("button");
+          btnPublicar.type = "button";
+          btnPublicar.className = "botao-publicar";
+          btnPublicar.textContent = "Publicar";
+          btnPublicar.addEventListener("click", function () {
+            publicarVideoExistente(v.nome, btnPublicar);
+          });
+
           item.appendChild(video);
           item.appendChild(link);
+          item.appendChild(btnPublicar);
+
           listaVideos.appendChild(item);
         });
       })
       .catch(function () {
         /* silencioso */
+      });
+  }
+
+  // Re-publish an already-generated video (no generation, just post to TikTok).
+  function publicarVideoExistente(nome, btn) {
+    btn.disabled = true;
+    var originalText = "Publicar";
+    btn.textContent = "Publicando…";
+    fetch("/api/publish_existing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video: nome })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (d) { return { status: resp.status, dados: d }; });
+      })
+      .then(function (res) {
+        if (res.dados && res.dados.ok) {
+          btn.textContent = "Publicado ✓ " + (res.dados.publish_id || "");
+          btn.classList.add("botao-publicar-done");
+        } else {
+          var msg = (res.dados && res.dados.erro) || "Erro ao publicar";
+          btn.textContent = "Erro: " + msg;
+          btn.classList.add("botao-publicar-erro");
+          btn.title = msg;
+          btn.disabled = false;
+          setTimeout(function () { btn.textContent = originalText; btn.classList.remove("botao-publicar-erro"); }, 4000);
+        }
+      })
+      .catch(function (err) {
+        btn.textContent = "Erro de rede";
+        btn.classList.add("botao-publicar-erro");
+        btn.title = err && err.message || "fetch failed";
+        btn.disabled = false;
+        setTimeout(function () { btn.textContent = originalText; btn.classList.remove("botao-publicar-erro"); }, 4000);
       });
   }
 

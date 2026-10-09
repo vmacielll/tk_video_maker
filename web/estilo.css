@@ -802,3 +802,54 @@ select:focus {
   border-radius: 4px;
   font-size: 0.9em;
 }
+
+/* Publicar button on existing-video cards */
+.botao-publicar {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #fe2c55;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.botao-publicar:hover:not(:disabled) {
+  background: #e0244b;
+}
+
+.botao-publicar:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.botao-publicar.botao-publicar-done {
+  background: #2eb872;
+  cursor: default;
+}
+
+.botao-publicar.botao-publicar-erro {
+  background: #c0392b;
+  color: #fff;
+}
+
+.item-video {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--borda, #e1e1e1);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  background: var(--cartao-fundo, #fff);
+}
+
+.item-video video {
+  width: 100%;
+  max-height: 360px;
+  border-radius: 8px;
+  background: #000;
+}

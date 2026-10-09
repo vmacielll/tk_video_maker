@@ -460,6 +460,8 @@ class Handler(BaseHTTPRequestHandler):
             self._gerar()
         elif caminho == "/api/publish":
             self._api_publish()
+        elif caminho == "/api/publish_existing":
+            self._api_publish_existing()
         elif caminho == "/api/preview":
             self._preview()
         elif caminho == "/api/preview_camadas":
@@ -555,13 +557,23 @@ class Handler(BaseHTTPRequestHandler):
                 if publish_flag:
                     emit("publishing", {})
                     try:
-                        caption = None
+                        # Derive caption from the request body. Priority:
+                        # explicit "legenda" field > first 3 lines of "textos".
+                        caption = (dados.get("legenda") or "").strip()
+                        if not caption:
+                            textos = dados.get("textos") or ""
+                            linhas = [l.strip() for l in textos.splitlines() if l.strip()]
+                            caption = "\n".join(linhas[:3])
+                        # Always write the sidecar so tiktok_postar.py can find
+                        # the caption even when --caption is not passed.
                         caption_path = video_path + ".txt"
-                        if os.path.exists(caption_path):
-                            with open(caption_path) as f:
-                                caption = f.read().strip()
+                        with open(caption_path, "w", encoding="utf-8") as f:
+                            f.write(caption + "\n")
                         import auto_gerar
-                        result = auto_gerar._invoke_publish_subprocess(video_path, caption=caption)
+                        result = auto_gerar._invoke_publish_subprocess(
+                            video_path,
+                            caption=caption or None,
+                        )
                         if result["success"]:
                             JOB_STORE.set_state(job_id, "done")
                             emit("completed", {"publish_id": result["publish_id"], "video_path": video_path})
@@ -603,6 +615,65 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 break
+
+    def _api_publish_existing(self):
+        """POST /api/publish_existing — re-publish an already-generated video.
+
+        Body: ``{"video": "filename.mp4", "legenda": "optional caption"}``.
+        Returns JSON (not SSE — re-publish is a quick one-off):
+        ``{"ok": true, "publish_id": "..."}`` on success or
+        ``{"ok": false, "erro": "...", "error_type": "..."}`` on failure.
+
+        The video must live in ``saida_web/`` and have a ``.mp4`` extension.
+        The caption comes from the request body or the existing
+        ``<video>.txt`` sidecar; if neither exists, the request fails.
+        """
+        try:
+            tamanho = int(self.headers.get("Content-Length", 0))
+            dados = json.loads(self.rfile.read(tamanho).decode("utf-8"))
+        except Exception as e:
+            return self._json({"ok": False, "erro": "Bad request: %s" % e}, 400)
+
+        filename = (dados.get("video") or "").strip()
+        if not filename:
+            return self._json({"ok": False, "erro": "video required"}, 400)
+        # Path-traversal guard: only allow plain .mp4 filenames in saida_web.
+        if (
+            "/" in filename
+            or "\\" in filename
+            or ".." in filename
+            or not filename.endswith(".mp4")
+        ):
+            return self._json({"ok": False, "erro": "invalid video filename"}, 400)
+
+        video_path = os.path.join(SAIDA_WEB, filename)
+        if not os.path.isfile(video_path):
+            return self._json({"ok": False, "erro": "video not found"}, 404)
+
+        # Resolve caption: explicit body field > existing sidecar.
+        caption = (dados.get("legenda") or "").strip()
+        caption_path = video_path + ".txt"
+        if caption:
+            with open(caption_path, "w", encoding="utf-8") as f:
+                f.write(caption + "\n")
+        elif os.path.isfile(caption_path):
+            with open(caption_path, encoding="utf-8") as f:
+                caption = f.read().strip()
+
+        if not caption:
+            return self._json(
+                {"ok": False, "erro": "legenda required (no sidecar and no legenda in body)"},
+                400,
+            )
+
+        import auto_gerar
+        result = auto_gerar._invoke_publish_subprocess(video_path, caption=caption)
+        if result["success"]:
+            return self._json({"ok": True, "publish_id": result["publish_id"]})
+        return self._json(
+            {"ok": False, "erro": result["error"], "error_type": result["error_type"]},
+            500,
+        )
 
     def _api_publish_stream(self):
         """GET /api/publish/stream?job_id=X — re-attach to an existing job.
