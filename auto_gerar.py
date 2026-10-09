@@ -120,31 +120,13 @@ def _resolve_audio_path(
 
 
 def _pre_check_tokens(tokens_path):
-    """Return a snapshot of TikTok auth state for a token file.
+    """DEPRECATED: use ``tiktok_auth.tiktok_status`` directly.
 
-    Returns a dict with three boolean/string fields:
-    - ``configured``: whether the file exists, parses, and is not expired.
-    - ``expires_at``: ISO 8601 string from the token file, or None.
-    - ``scope_ok``: whether the scope includes ``video.publish``.
-
-    Never returns token secrets. Always safe to expose to the user.
+    Kept as a thin wrapper for backward compatibility with existing tests; new
+    code should call ``tiktok_auth.tiktok_status(tokens_path)`` directly so the
+    single source of truth lives in ``tiktok_auto_post/tiktok_auth.py``.
     """
-    path = pathlib.Path(tokens_path) if not isinstance(tokens_path, pathlib.Path) else tokens_path
-    try:
-        tokens = tiktok_auth.load_tokens(path)
-    except Exception:
-        return {"configured": False, "expires_at": None, "scope_ok": False}
-
-    if tokens is None:
-        return {"configured": False, "expires_at": None, "scope_ok": False}
-
-    expires_at = tokens.get("access_expires_at")
-    if tiktok_auth.is_expired(tokens):
-        return {"configured": False, "expires_at": expires_at, "scope_ok": False}
-
-    scope = tokens.get("scope", "") or ""
-    scope_ok = "video.publish" in [s.strip() for s in scope.split(",") if s.strip()]
-    return {"configured": True, "expires_at": expires_at, "scope_ok": scope_ok}
+    return tiktok_auth.tiktok_status(tokens_path)
 
 
 _DEFAULT_POSTAR_BIN = (
@@ -314,7 +296,7 @@ def main():
     # expensive work (Groq / Pexels / ffmpeg) so the user doesn't wait 30s
     # just to discover the OAuth flow is missing.
     if args.publish == "yes":
-        pre = _pre_check_tokens(tiktok_auth.TOKENS_PATH)
+        pre = tiktok_auth.tiktok_status(tiktok_auth.TOKENS_PATH)
         if not pre["configured"] or not pre["scope_ok"]:
             block = {
                 "attempted": True,

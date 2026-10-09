@@ -126,6 +126,35 @@ def save_tokens(tokens: dict, path: pathlib.Path = TOKENS_PATH) -> None:
     os.replace(tmp_path, path)
 
 
+def tiktok_status(path: pathlib.Path = TOKENS_PATH) -> dict:
+    """Return a snapshot of TikTok auth state for the ``path`` token file.
+
+    Returns a dict with three boolean/string fields:
+    - ``configured``: whether the file exists, parses, and is not expired.
+    - ``expires_at``: ISO 8601 string from the token file, or None.
+    - ``scope_ok``: whether the scope includes ``video.publish``.
+
+    Never returns token secrets. Always safe to expose to the user (e.g. in
+    HTTP responses from the web UI).
+    """
+    path = pathlib.Path(path) if not isinstance(path, pathlib.Path) else path
+    try:
+        tokens = load_tokens(path)
+    except Exception:
+        return {"configured": False, "expires_at": None, "scope_ok": False}
+
+    if tokens is None:
+        return {"configured": False, "expires_at": None, "scope_ok": False}
+
+    expires_at = tokens.get("access_expires_at")
+    if is_expired(tokens):
+        return {"configured": False, "expires_at": expires_at, "scope_ok": False}
+
+    scope = tokens.get("scope", "") or ""
+    scope_ok = "video.publish" in [s.strip() for s in scope.split(",") if s.strip()]
+    return {"configured": True, "expires_at": expires_at, "scope_ok": scope_ok}
+
+
 def is_expired(tokens: dict, skew_seconds: int = REFRESH_SKEW_SECONDS) -> bool:
     """Return ``True`` if the access token is expired or expiring soon.
 

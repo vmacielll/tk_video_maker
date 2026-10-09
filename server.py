@@ -31,6 +31,7 @@ import pexels
 import temas
 import gemini
 import openverse_audio
+from tiktok_auto_post import tiktok_auth
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
@@ -309,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
                                       for i, n in nucleo.TEMPLATES.items()]})
         elif caminho == "/api/audio/buscar":
             self._api_audio_buscar()
+        elif caminho == "/api/tiktok/status":
+            self._api_tiktok_status()
         elif caminho.startswith("/api/audio/preview/"):
             # ids do Openverse são UUIDs (strings), não inteiros.
             track_id = unquote(os.path.basename(caminho))
@@ -363,6 +366,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         self._servir_mp3(caminho)
+
+    def _api_tiktok_status(self):
+        """GET /api/tiktok/status -> JSON snapshot of TikTok auth state.
+
+        Cheap, no side effects. Safe to call on every page load. The response
+        shape is documented in the publish-flow spec (issue #3):
+        {configured: bool, expires_at: ISO or null, scope_ok: bool}.
+        """
+        try:
+            self._json(tiktok_auth.tiktok_status())
+        except Exception as e:
+            self._json({"ok": False, "erro": "Erro ao checar TikTok: %s" % e}, 500)
 
     # ---------- POST ----------
     def do_POST(self):
