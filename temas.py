@@ -3,14 +3,16 @@
 """Biblioteca de temas prontos: frases + legenda + palavras-chave de fundo.
 
 Cada tema tem:
-    busca    -> palavras-chave (em inglês) pra buscar o fundo no Pexels
-    frases   -> as 7 frases do vídeo (~15s)
-    legenda  -> a descrição pronta pro TikTok
+    busca         -> palavras-chave (em inglês) pra buscar o fundo no Pexels
+    musica_busca  -> palavras-chave (em inglês) pra buscar a trilha no Pixabay
+    frases        -> as 7 frases do vídeo (~15s)
+    legenda       -> a descrição pronta pro TikTok
 """
 
 TEMAS = {
     "lei da atracao": {
         "busca": "golden light sunrise hope",
+        "musica_busca": "ambient hopeful cinematic inspirational",
         "cor": "#d4af37",
         "frases": [
             "Se você achou esse vídeo, as coisas vão dar certo pra você",
@@ -25,6 +27,7 @@ TEMAS = {
     },
     "gratidao": {
         "busca": "warm sunlight nature",
+        "musica_busca": "warm uplifting ambient piano",
         "cor": "#7fc98a",
         "frases": [
             "Pare o que está fazendo e sinta gratidão agora",
@@ -39,6 +42,7 @@ TEMAS = {
     },
     "prosperidade": {
         "busca": "golden bokeh sparkle abundance",
+        "musica_busca": "elegant cinematic hopeful orchestral",
         "cor": "#e6b83a",
         "frases": [
             "O dinheiro está vindo até você",
@@ -53,6 +57,7 @@ TEMAS = {
     },
     "amor proprio": {
         "busca": "pink flowers soft dreamy",
+        "musica_busca": "soft dreamy emotional piano",
         "cor": "#e58fb0",
         "frases": [
             "Você não precisa da aprovação de ninguém",
@@ -67,6 +72,7 @@ TEMAS = {
     },
     "confianca no tempo": {
         "busca": "calm sunset horizon",
+        "musica_busca": "calm ambient peaceful meditation",
         "cor": "#7fb3d5",
         "frases": [
             "Tudo tem o tempo certo",
@@ -81,6 +87,7 @@ TEMAS = {
     },
     "vencer o medo": {
         "busca": "light through dark clouds hope",
+        "musica_busca": "epic hopeful cinematic inspirational",
         "cor": "#e09a4a",
         "frases": [
             "O medo está te impedindo de viver",
@@ -95,6 +102,7 @@ TEMAS = {
     },
     "recomeco": {
         "busca": "sunrise new beginning horizon",
+        "musica_busca": "uplifting sunrise hopeful ambient",
         "cor": "#8fd0a0",
         "frases": [
             "Recomeçar não é falhar",
@@ -109,6 +117,7 @@ TEMAS = {
     },
     "intuicao": {
         "busca": "misty forest light rays",
+        "musica_busca": "mystical ambient ethereal dreamy",
         "cor": "#b7a6d9",
         "frases": [
             "Aquela sensação que você ignorou era sua intuição",
@@ -123,6 +132,7 @@ TEMAS = {
     },
     "destino": {
         "busca": "starry sky galaxy",
+        "musica_busca": "cinematic wonder ambient ethereal",
         "cor": "#7d6bd9",
         "frases": [
             "Você está exatamente onde deveria estar",
@@ -137,6 +147,7 @@ TEMAS = {
     },
     "sinais do universo": {
         "busca": "moon night sky stars",
+        "musica_busca": "magical ambient mystical wonder",
         "cor": "#c5b3e6",
         "frases": [
             "Coincidências não existem",
@@ -151,6 +162,7 @@ TEMAS = {
     },
     "poder da mente": {
         "busca": "galaxy nebula universe",
+        "musica_busca": "epic ambient powerful cinematic",
         "cor": "#9b7bd4",
         "frases": [
             "Você cria a sua realidade com seus pensamentos",
@@ -165,6 +177,7 @@ TEMAS = {
     },
     "ritual antes de dormir": {
         "busca": "candle night moon",
+        "musica_busca": "calm meditation night ambient",
         "cor": "#5b6bd9",
         "frases": [
             "Faça isso antes de dormir e as coisas vão mudar",
@@ -179,6 +192,7 @@ TEMAS = {
     },
     "fatos esotericos": {
         "busca": "tarot cards candle mystical",
+        "musica_busca": "mystical ambient mysterious",
         "cor": "#6d4bc7",
         "frases": [
             "Você sabia que o Tarot nasceu como jogo de cartas, não oráculo?",
@@ -193,6 +207,7 @@ TEMAS = {
     },
     "significado oculto": {
         "busca": "tarot card dark mystery",
+        "musica_busca": "dark mystical ambient mysterious",
         "cor": "#8e5bd4",
         "frases": [
             "O que significa tirar a mesma carta repetidamente?",
@@ -207,6 +222,7 @@ TEMAS = {
     },
     "sinais de manifestacao": {
         "busca": "butterfly feather light",
+        "musica_busca": "magical wonder uplifting ambient",
         "cor": "#e0c27a",
         "frases": [
             "3 sinais de que a lei da atração JÁ está funcionando",
@@ -221,6 +237,7 @@ TEMAS = {
     },
     "signos": {
         "busca": "zodiac constellation stars",
+        "musica_busca": "celestial ambient ethereal wonder",
         "cor": "#6d6fd9",
         "frases": [
             "Seu signo vai viver uma virada essa semana",
@@ -235,6 +252,7 @@ TEMAS = {
     },
     "numeros e simbolos": {
         "busca": "sacred geometry clock",
+        "musica_busca": "sacred geometry ambient meditation",
         "cor": "#d9b34a",
         "frases": [
             "O mesmo número aparece na sua vida o tempo todo?",
@@ -249,6 +267,7 @@ TEMAS = {
     },
     "origem e historia": {
         "busca": "ancient temple candle ritual",
+        "musica_busca": "ancient ambient cinematic mysterious",
         "cor": "#c98a4b",
         "frases": [
             "A história real por trás dos símbolos que você usa",

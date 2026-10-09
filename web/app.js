@@ -191,6 +191,189 @@
   }
 
   // Geração
+  var publicarCheckbox = document.getElementById("publicarCheckbox");
+  var publicarAviso = document.getElementById("publicarAviso");
+  var statusPill = document.getElementById("statusPill");
+  var publicarResultado = document.getElementById("publicar-resultado");
+  var publicarPublishId = document.getElementById("publicarPublishId");
+  var publicarTikTokLink = document.getElementById("publicarTikTokLink");
+  var ultimoVideoPath = null;
+  var STORAGE_JOB_KEY = "tkvm_publish_job_id";
+
+  // Pre-check: fetch /api/tiktok/status on page load to enable/disable the
+  // publish checkbox and show the inline notice when tokens are missing.
+  fetch("/api/tiktok/status")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var ok = data && data.configured && data.scope_ok;
+      publicarCheckbox.disabled = !ok;
+      publicarAviso.hidden = ok;
+      if (!ok) {
+        publicarCheckbox.checked = false;
+      }
+    })
+    .catch(function () {
+      // If the endpoint errors, leave the checkbox enabled but warn the user.
+      publicarAviso.hidden = false;
+    });
+
+  // On page load, re-attach to a stale job from a previous session if any.
+  tentarReanexar();
+
+  function tentarReanexar() {
+    var jobId = localStorage.getItem(STORAGE_JOB_KEY);
+    if (!jobId) return;
+    // Mark UI as re-attaching so the user knows something is happening.
+    statusPill.hidden = false;
+    statusPill.textContent = "Reanexando job anterior…";
+    statusPill.className = "status-pill status-running";
+
+    var eventSource = new EventSource("/api/publish/stream?job_id=" + encodeURIComponent(jobId));
+    eventSource.onmessage = function (e) { /* default "message" type — ignore */ };
+    eventSource.addEventListener("started", function (e) { handlePublishEvent("started", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("generating", function (e) { handlePublishEvent("generating", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("generated", function (e) { handlePublishEvent("generated", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("publishing", function (e) { handlePublishEvent("publishing", parseJsonSafe(e.data)); });
+    eventSource.addEventListener("completed", function (e) {
+      handlePublishEvent("completed", parseJsonSafe(e.data));
+      eventSource.close();
+    });
+    eventSource.addEventListener("error", function () {
+      // Server closed the stream (job done or unknown). Either way, we're done.
+      eventSource.close();
+    });
+  }
+
+  function parseJsonSafe(s) {
+    try { return JSON.parse(s); } catch (e) { return {}; }
+  }
+
+  function handlePublishEvent(eventType, data) {
+    if (!data) data = {};
+    switch (eventType) {
+      case "started":
+        if (data.job_id) localStorage.setItem(STORAGE_JOB_KEY, data.job_id);
+        atualizarStatusPill("Iniciado", "status-running");
+        break;
+      case "generating":
+        atualizarStatusPill("Gerando…", "status-running");
+        break;
+      case "generated":
+        if (data.video_path) {
+          ultimoVideoPath = data.video_path;
+          // Also make the regular video download link available
+          resultado.hidden = false;
+          var base = data.video_path.split("/").pop();
+          var url = "/videos/" + base;
+          videoResultado.src = url;
+          linkDownload.href = url;
+          linkDownload.setAttribute("download", base);
+        }
+        atualizarStatusPill("Vídeo gerado", "status-running");
+        break;
+      case "publishing":
+        atualizarStatusPill("Postando no TikTok…", "status-running");
+        break;
+      case "completed":
+        localStorage.removeItem(STORAGE_JOB_KEY);
+        atualizarStatusPill("Concluído!", "status-done");
+        if (data.publish_id) {
+          publicarResultado.hidden = false;
+          publicarPublishId.textContent = data.publish_id;
+          // TikTok doesn't have a public direct-link from publish_id; show
+          // the user's profile or a generic search fallback.
+          publicarTikTokLink.href = "https://www.tiktok.com/";
+          publicarResultado.scrollIntoView({ behavior: "smooth" });
+        }
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+        break;
+      case "error":
+        localStorage.removeItem(STORAGE_JOB_KEY);
+        atualizarStatusPill("Erro: " + (data.error || "desconhecido"), "status-error");
+        if (ultimoVideoPath) {
+          // Save-as-fallback: video is still on disk; offer download.
+          var base2 = ultimoVideoPath.split("/").pop();
+          var url2 = "/videos/" + base2;
+          mostrarAlerta("Falha ao postar no TikTok. <a href='" + url2 + "' download>Baixar vídeo</a> para postar manualmente.");
+        } else {
+          mostrarAlerta("Erro: " + (data.error || "desconhecido"));
+        }
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+        break;
+    }
+  }
+
+  function atualizarStatusPill(texto, classe) {
+    statusPill.hidden = false;
+    statusPill.textContent = texto;
+    statusPill.className = "status-pill " + (classe || "status-running");
+  }
+
+  function iniciarPublicacao(payload) {
+    payload.publish = true;
+    publicarResultado.hidden = true;
+    statusPill.hidden = false;
+    statusPill.textContent = "Iniciando…";
+    statusPill.className = "status-pill status-running";
+
+    fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+      .then(function (resp) {
+        if (!resp.ok || !resp.body) {
+          return resp.json().then(function (d) {
+            throw new Error(d.erro || ("HTTP " + resp.status));
+          });
+        }
+        return consumirSSE(resp);
+      })
+      .catch(function (err) {
+        mostrarAlerta("Não foi possível iniciar a publicação: " + err.message);
+        atualizarStatusPill("Erro: " + err.message, "status-error");
+        gerarBtn.disabled = false;
+        gerarBtn.textContent = "Gerar vídeo";
+      });
+  }
+
+  function consumirSSE(response) {
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = "";
+    return new Promise(function (resolve, reject) {
+      function pump() {
+        reader.read().then(function (r) {
+          if (r.done) { resolve(); return; }
+          buffer += decoder.decode(r.value, { stream: true });
+          var idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            var block = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            processarBlocoSSE(block);
+          }
+          pump();
+        }).catch(reject);
+      }
+      pump();
+    });
+  }
+
+  function processarBlocoSSE(block) {
+    var eventType = "message";
+    var data = "";
+    var linhas = block.split("\n");
+    for (var i = 0; i < linhas.length; i++) {
+      var ln = linhas[i];
+      if (ln.indexOf("event:") === 0) eventType = ln.slice(6).trim();
+      else if (ln.indexOf("data:") === 0) data += ln.slice(5).trim();
+    }
+    if (!data) return;
+    handlePublishEvent(eventType, parseJsonSafe(data));
+  }
+
   gerarBtn.addEventListener("click", function () {
     if (!imagemBase64) {
       mostrarAlerta("Escolha uma imagem de fundo primeiro.");
@@ -200,10 +383,6 @@
       mostrarAlerta("Escreva pelo menos uma frase.");
       return;
     }
-
-    gerarBtn.disabled = true;
-    gerarBtn.textContent = "Gerando…";
-    esconderAlerta();
 
     var payload = {
       textos: textos.value,
@@ -221,6 +400,27 @@
     } else {
       payload.imagem = imagemBase64;
     }
+    var audioId = audioPicker.oculto.value;
+    if (audioId) {
+      // trilha de fundo escolhida no picker de músicas (UUID string)
+      payload.audio_id = audioId;
+    }
+
+    if (publicarCheckbox.checked) {
+      // Branch: publish via /api/publish (SSE)
+      gerarBtn.disabled = true;
+      gerarBtn.textContent = "Publicando…";
+      esconderAlerta();
+      iniciarPublicacao(payload);
+      return;
+    }
+
+    // Default: generate only via /api/gerar (sync)
+    gerarBtn.disabled = true;
+    gerarBtn.textContent = "Gerando…";
+    esconderAlerta();
+    publicarResultado.hidden = true;
+    statusPill.hidden = true;
 
     fetch("/api/gerar", {
       method: "POST",
@@ -345,13 +545,58 @@
           link.textContent = "Baixar";
           link.className = "botao-download";
 
+          var btnPublicar = document.createElement("button");
+          btnPublicar.type = "button";
+          btnPublicar.className = "botao-publicar";
+          btnPublicar.textContent = "Publicar";
+          btnPublicar.addEventListener("click", function () {
+            publicarVideoExistente(v.nome, btnPublicar);
+          });
+
           item.appendChild(video);
           item.appendChild(link);
+          item.appendChild(btnPublicar);
+
           listaVideos.appendChild(item);
         });
       })
       .catch(function () {
         /* silencioso */
+      });
+  }
+
+  // Re-publish an already-generated video (no generation, just post to TikTok).
+  function publicarVideoExistente(nome, btn) {
+    btn.disabled = true;
+    var originalText = "Publicar";
+    btn.textContent = "Publicando…";
+    fetch("/api/publish_existing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video: nome })
+    })
+      .then(function (resp) {
+        return resp.json().then(function (d) { return { status: resp.status, dados: d }; });
+      })
+      .then(function (res) {
+        if (res.dados && res.dados.ok) {
+          btn.textContent = "Publicado ✓ " + (res.dados.publish_id || "");
+          btn.classList.add("botao-publicar-done");
+        } else {
+          var msg = (res.dados && res.dados.erro) || "Erro ao publicar";
+          btn.textContent = "Erro: " + msg;
+          btn.classList.add("botao-publicar-erro");
+          btn.title = msg;
+          btn.disabled = false;
+          setTimeout(function () { btn.textContent = originalText; btn.classList.remove("botao-publicar-erro"); }, 4000);
+        }
+      })
+      .catch(function (err) {
+        btn.textContent = "Erro de rede";
+        btn.classList.add("botao-publicar-erro");
+        btn.title = err && err.message || "fetch failed";
+        btn.disabled = false;
+        setTimeout(function () { btn.textContent = originalText; btn.classList.remove("botao-publicar-erro"); }, 4000);
       });
   }
 
@@ -656,6 +901,177 @@
         gerarLegendaBtn.disabled = false;
         gerarLegendaBtn.textContent = "Gerar legenda com IA";
       });
+  });
+
+  // ===== Música de fundo (picker em acordeão) =====
+  // Seção única e opcional: fica recolhida até o usuário abrir o cabeçalho.
+  // Nenhuma busca acontece sozinha — só ao clicar em "Buscar músicas".
+  var audioPicker = {
+    cabecalho: document.querySelector(".audio-cabecalho"),
+    conteudo: document.getElementById("audioConteudo"),
+    input: document.getElementById("musica-query"),
+    buscar: document.getElementById("musica-buscar"),
+    opcoes: document.getElementById("audioOpcoes"),
+    oculto: document.getElementById("audioId")
+  };
+
+  // Acordeão: abre/fecha o conteúdo e sincroniza o aria-expanded
+  // (o giro do chevron é só CSS, via [aria-expanded="true"])
+  function alternarAcordeaoAudio() {
+    var abrindo = audioPicker.conteudo.hidden;
+    audioPicker.conteudo.hidden = !abrindo;
+    audioPicker.cabecalho.setAttribute("aria-expanded", abrindo ? "true" : "false");
+  }
+
+  audioPicker.cabecalho.addEventListener("click", alternarAcordeaoAudio);
+  // Teclado: cabeçalho focável se comporta como disclosure (Enter/Espaço)
+  audioPicker.cabecalho.setAttribute("tabindex", "0");
+  audioPicker.cabecalho.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      alternarAcordeaoAudio();
+    }
+  });
+
+  function formatarDuracaoAudio(total) {
+    var s = Math.max(0, Math.floor(total || 0));
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function pausarAudiosDe(picker) {
+    var audios = picker.opcoes.querySelectorAll("audio");
+    Array.prototype.forEach.call(audios, function (a) {
+      if (!a.paused) { a.pause(); }
+    });
+  }
+
+  function pausarOutrosPreviews(atual) {
+    var audios = document.querySelectorAll(".audio-opcoes audio");
+    Array.prototype.forEach.call(audios, function (a) {
+      if (a !== atual && !a.paused) { a.pause(); }
+    });
+  }
+
+  function criarCartaoAudio(opcao) {
+    var card = document.createElement("div");
+    card.className = "audio-card";
+    card.dataset.id = String(opcao.id);
+
+    var topo = document.createElement("div");
+    topo.className = "audio-card-topo";
+
+    var titulo = document.createElement("span");
+    titulo.className = "audio-titulo";
+    titulo.textContent = opcao.title || "Trilha sem título";
+    titulo.title = titulo.textContent; // título completo quando truncar
+
+    var dur = document.createElement("span");
+    dur.className = "audio-duracao";
+    dur.textContent = opcao.duration_str || formatarDuracaoAudio(opcao.duration);
+
+    topo.appendChild(titulo);
+    topo.appendChild(dur);
+
+    var audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "none";
+    if (opcao.preview_url) { audio.src = opcao.preview_url; }
+    audio.setAttribute("aria-label", "Prévia: " + (opcao.title || "trilha"));
+    // toca só uma prévia por vez
+    audio.addEventListener("play", function () { pausarOutrosPreviews(audio); });
+
+    var escolher = document.createElement("button");
+    escolher.type = "button";
+    escolher.className = "audio-escolher";
+    escolher.setAttribute("aria-pressed", "false");
+    escolher.addEventListener("click", function () {
+      var id = card.dataset.id;
+      if (audioPicker.oculto.value === id) {
+        audioPicker.oculto.value = ""; // clicar de novo desmarca
+      } else {
+        audioPicker.oculto.value = id;
+      }
+      aplicarSelecaoAudio();
+    });
+
+    card.appendChild(topo);
+    card.appendChild(audio);
+    card.appendChild(escolher);
+    return card;
+  }
+
+  function aplicarSelecaoAudio() {
+    var selecionado = audioPicker.oculto.value;
+    var cards = audioPicker.opcoes.querySelectorAll(".audio-card");
+    Array.prototype.forEach.call(cards, function (card) {
+      var ativo = !!selecionado && card.dataset.id === selecionado;
+      card.classList.toggle("audio-card-selecionado", ativo);
+      var btn = card.querySelector(".audio-escolher");
+      if (btn) {
+        btn.textContent = ativo ? "Selecionada ✓" : "Escolher";
+        btn.setAttribute("aria-pressed", ativo ? "true" : "false");
+      }
+    });
+  }
+
+  function renderOpcoesAudio(opcoes) {
+    pausarAudiosDe(audioPicker);
+    audioPicker.opcoes.innerHTML = "";
+    if (!opcoes || !opcoes.length) {
+      var vazio = document.createElement("p");
+      vazio.className = "audio-status";
+      vazio.textContent = "Nenhuma trilha encontrada. Tente buscar outras.";
+      audioPicker.opcoes.appendChild(vazio);
+      return;
+    }
+    opcoes.forEach(function (opcao) {
+      audioPicker.opcoes.appendChild(criarCartaoAudio(opcao));
+    });
+    aplicarSelecaoAudio();
+  }
+
+  function buscarMusicas() {
+    var query = (audioPicker.input.value || "").trim();
+    if (!query) {
+      mostrarAlerta("Escreva um termo para buscar as músicas.");
+      return;
+    }
+    audioPicker.buscar.disabled = true;
+    // nova busca descarta a seleção atual
+    audioPicker.oculto.value = "";
+    aplicarSelecaoAudio();
+    pausarAudiosDe(audioPicker);
+    audioPicker.opcoes.innerHTML =
+      '<p class="audio-status"><span class="audio-spinner" aria-hidden="true"></span>Buscando opções…</p>';
+
+    fetch("/api/audio/buscar?query=" + encodeURIComponent(query))
+      .then(function (r) { return r.json(); })
+      .then(function (dados) {
+        if (!dados || !dados.ok) { throw new Error((dados && dados.erro) || "erro"); }
+        renderOpcoesAudio(dados.opcoes || []);
+      })
+      .catch(function () {
+        pausarAudiosDe(audioPicker);
+        audioPicker.opcoes.innerHTML = "";
+        var erro = document.createElement("p");
+        erro.className = "audio-status audio-status-erro";
+        erro.textContent = "Erro ao buscar trilhas. Tente novamente.";
+        audioPicker.opcoes.appendChild(erro);
+      })
+      .finally(function () {
+        audioPicker.buscar.disabled = false;
+      });
+  }
+
+  audioPicker.buscar.addEventListener("click", buscarMusicas);
+  // Enter no campo de busca também busca
+  audioPicker.input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      buscarMusicas();
+    }
   });
 
   carregarTemas();
